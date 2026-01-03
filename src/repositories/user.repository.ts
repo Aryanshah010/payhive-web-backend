@@ -8,7 +8,7 @@ export interface IUserRepository {
 
 export class UserRepository implements IUserRepository {
 
-     async getUserById(userId: string): Promise<IUser | null> {
+    async getUserById(userId: string): Promise<IUser | null> {
         const user = await UserModel.findById(userId);
         return user;
     }
@@ -20,7 +20,6 @@ export class UserRepository implements IUserRepository {
 
     async createUser(userData: Partial<IUser>): Promise<IUser> {
         const user = new UserModel(userData);
-        await user.save();
-        return user;
+        return await user.save();
     }
 }
