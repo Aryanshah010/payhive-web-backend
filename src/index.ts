@@ -3,9 +3,7 @@ import dotenv from 'dotenv';
 import bodyparser from 'body-parser'
 import { PORT } from "./configs";
 import { connectDb } from "./database/mongodb";
-// import authRouters from "./routes/auth.route";
-
-
+import authRouters from "./routes/auth.route";
 
 dotenv.config();
 console.log(process.env.PORT);
@@ -13,8 +11,7 @@ console.log(process.env.PORT);
 
 const app: Application = express();
 app.use(bodyparser.json())
-
-// app.use("/api/auth", authRouters);
+app.use("/api/auth", authRouters);
 
 
 app.get("/", (req: Request, res: Response) => {
