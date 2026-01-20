@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { UserService } from "../services/user.service";
 import { CreateUserDto, LoginUserDto } from "../dtos/user.dto";
-import z from "zod";
+import z, { success } from "zod";
 
 let userService = new UserService();
 
@@ -19,7 +19,7 @@ export class AuthController {
             const newUser = await userService.registerUser(parsedData.data);
 
             return res.status(201).json(
-                { success: true, message: "Registred Successful", data: newUser }
+                { success: true, message: "Registred Successfull", data: newUser }
             )
 
         } catch (error: Error | any) {
@@ -48,4 +48,5 @@ export class AuthController {
 
         }
     }
+
 }

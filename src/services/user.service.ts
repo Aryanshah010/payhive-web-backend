@@ -38,7 +38,6 @@ export class UserService {
 
         const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
         return { token, user }
-
-
     }
+    
 }
