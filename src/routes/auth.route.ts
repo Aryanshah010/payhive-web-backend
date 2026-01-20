@@ -1,18 +1,13 @@
-import { Router,Request,Response } from "express";
+import { Router } from "express";
 import { AuthController } from "../controllers/auth.controller";
-import { authorizedMiddleware } from "../middlewares/authorized.middleware";
 
-const authController=new AuthController();
 
-const router=Router();
+const authController = new AuthController();
 
-router.post("/login",authController.loginUser);
-router.post("/register",authController.createUser);
+const router = Router();
 
-router.get("/test", authorizedMiddleware,(req: Request, res: Response) => {
-    res.status(200).json({ success: true, message: "Welcome to dashboard after successfull JWT validation" });
-});
-
+router.post("/login", authController.loginUser);
+router.post("/register", authController.createUser);
 
 export default router;
 

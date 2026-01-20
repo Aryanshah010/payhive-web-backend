@@ -4,13 +4,21 @@ import bodyparser from 'body-parser'
 import { PORT } from "./configs";
 import { connectDb } from "./database/mongodb";
 import authRouters from "./routes/auth.route";
+import cors from 'cors';
 
 dotenv.config();
 console.log(process.env.PORT);
 
 
 const app: Application = express();
-app.use(bodyparser.json())
+
+let corsOptions = {
+    origin: ['http://localhost:3000', "http://localhost:3003"]
+    //List of accepted domain
+}
+//origin: '*', //accept all
+app.use(cors(corsOptions));
+app.use(bodyparser.json());
 app.use("/api/auth", authRouters);
 
 

@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { UserService } from "../services/user.service";
 import { CreateUserDto, LoginUserDto } from "../dtos/user.dto";
-import z from "zod";
+import z, { success } from "zod";
 
 let userService = new UserService();
 
@@ -19,7 +19,7 @@ export class AuthController {
             const newUser = await userService.registerUser(parsedData.data);
 
             return res.status(201).json(
-                { success: true, message: "Registred Successful", data: newUser }
+                { success: true, message: "Registred Successfull", data: newUser }
             )
 
         } catch (error: Error | any) {
@@ -41,6 +41,27 @@ export class AuthController {
                 { success: true, message: "Login Successful", data: user, token }
             )
 
+        } catch (error: Error | any) {
+            return res.status(error.statusCode || 500).json(
+                { success: false, message: error.message || "Internal Server Error" }
+            )
+
+        }
+    }
+
+    async getUserById(req: Request, res: Response) {
+        try {
+            const userId = req.user?._id;
+            if (!userId) {
+                return res.status(400).json(
+                    { success: false, message: "User ID not provided" }
+                )
+
+            }
+            const user = await userService.getUserById(userId);
+            return res.status(200).json(
+                { success: true, message: "User fetched successfully", data: user }
+            )
         } catch (error: Error | any) {
             return res.status(error.statusCode || 500).json(
                 { success: false, message: error.message || "Internal Server Error" }
