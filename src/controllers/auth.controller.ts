@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { UserService } from "../services/user.service";
 import { CreateUserDto, LoginUserDto } from "../dtos/user.dto";
-import z, { success } from "zod";
+import z from "zod";
 
 let userService = new UserService();
 

@@ -8,7 +8,10 @@ export const UserSchema = z.object({
         .min(6, "Password must be at least 6 characters long")
         .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
         .regex(/[0-9]/, "Password must contain at least one number"),
-    
+        
+    role: z.enum(["user", "admin"]).default("user"),
+    imageUrl: z.string().optional()
+
 });
 
-export type UserType=z.infer<typeof UserSchema>;
+export type UserType = z.infer<typeof UserSchema>;
