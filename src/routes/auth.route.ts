@@ -4,7 +4,6 @@ import { uploads } from "../middlewares/upload.middleware";
 import { UserController } from "../controllers/user.controller";
 import { authorizedMiddleware } from '../middlewares/authorized.middleware';
 
-
 const authController = new AuthController();
 const userController = new UserController();
 
@@ -13,12 +12,20 @@ const router = Router();
 
 router.post("/login", authController.loginUser);
 router.post("/register", authController.createUser);
-router.put(
+router.post(
     "/profilePicture",
     authorizedMiddleware,
-    uploads.single("profilePicture"), // field name must match frontend FormData
+    uploads.single("profilePicture"),
     userController.updateProfilePicture
 );
+
+
+router.get(
+    "/me",
+    authorizedMiddleware,
+    userController.getProfile
+);
+
 
 export default router;
 

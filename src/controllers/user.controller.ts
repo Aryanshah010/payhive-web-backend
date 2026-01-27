@@ -45,4 +45,42 @@ export class UserController {
             });
         }
     }
+
+
+    async getProfile(req: Request, res: Response) {
+        try {
+            const userId = req.user?._id;
+            if (!userId) {
+                return res
+                    .status(400)
+                    .json({ success: false, message: "User ID not provided" });
+            }
+
+            const user = await userService.getUserById(userId.toString());
+            if (!user) {
+                return res
+                    .status(404)
+                    .json({ success: false, message: "User not found" });
+            }
+
+            return res.status(200).json({
+                success: true,
+                message: "User profile fetched successfully",
+                data: {
+                    _id: user._id,
+                    fullName: user.fullName,
+                    phoneNumber: user.phoneNumber,
+                    imageUrl: user.imageUrl,
+                    createdAt: user.createdAt,
+                    updatedAt: user.updatedAt,
+                },
+            });
+        } catch (error: any) {
+            return res.status(error.statusCode || 500).json({
+                success: false,
+                message: error.message || "Failed to fetch user profile",
+            });
+        }
+    }
+
 }
