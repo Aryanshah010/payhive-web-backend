@@ -20,5 +20,17 @@ export const LoginUserDto = UserSchema.pick(
 
 export type LoginUserDto = z.infer<typeof LoginUserDto>;
 
+export const CreateUserByAdminDto = UserSchema.pick(
+    {
+        fullName: true,
+        phoneNumber: true,
+        password: true,
+        role: true,
+        imageUrl: true
+    }
+);
+
+export type CreateUserByAdminDto = z.infer<typeof CreateUserByAdminDto>;
+
 export const UpdateUserDto = UserSchema.partial();
 export type UpdateUserDto = z.infer<typeof UpdateUserDto>;
