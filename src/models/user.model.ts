@@ -7,6 +7,7 @@ const userMongoSchema: Schema = new Schema(
         phoneNumber: { type: String, required: true, unique: true },
         password: { type: String, required: true },
         role: { type: String, enum: ["user", "admin"], default: "user" },
+        imageUrl: { type: String, required: false }
     },
     {
         timestamps: true,
