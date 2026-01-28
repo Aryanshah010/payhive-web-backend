@@ -6,6 +6,7 @@ import { connectDb } from "./database/mongodb";
 import authRouters from "./routes/auth.route";
 import cors from 'cors';
 import path from 'path';
+import adminUserRoutes from "./routes/admin/admin.user.route";
 
 dotenv.config();
 console.log(process.env.PORT);
@@ -19,11 +20,12 @@ const app: Application = express();
 //origin: '*', //accept all
 // app.use(cors(corsOptions));
 app.use(cors({
-  origin: '*',
+    origin: '*',
 }));
 
 app.use(bodyparser.json());
 app.use("/api/auth", authRouters);
+app.use('/api/admin/users', adminUserRoutes);
 
 app.use("/uploads", express.static(path.join(__dirname, '../uploads')));
 
