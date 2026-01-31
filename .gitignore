@@ -74,6 +74,9 @@ web_modules/
 dist
 .output
 
+# ignore uploads folder
+.uploads
+
 .pnp.*
 .yarn/*
 !.yarn/patches

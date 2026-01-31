@@ -1,0 +1,12 @@
+import { Router } from "express";
+import { uploads } from "../middlewares/upload.middleware";
+import { UserController } from "../controllers/user.controller";
+import { authorizedMiddleware } from '../middlewares/authorized.middleware';
+
+const userController = new UserController();
+
+const router = Router();
+
+router.put('/:id', authorizedMiddleware, uploads.single('profilePicture'), userController.updateProfile);
+
+export default router;

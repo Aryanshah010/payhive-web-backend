@@ -1,6 +1,8 @@
 import { Request, Response } from "express";
 import { UserService } from "../services/user.service";
 import { HttpError } from "../errors/http-error";
+import { UpdateDto } from "../dtos/user.dto";
+import z from "zod";
 
 
 let userService = new UserService();
@@ -43,6 +45,35 @@ export class UserController {
                 success: false,
                 message: error.message || "Failed to update profile picture",
             });
+        }
+    }
+
+    async updateProfile(req: Request, res: Response) {
+        try {
+            const userId = req.params.id;
+            const parsedData = UpdateDto.safeParse(req.body);
+            if (!parsedData.success) {
+                return res.status(400).json(
+                    { success: false, message: z.prettifyError(parsedData.error) }
+                );
+            }
+
+            let updateData = parsedData.data;
+            if (req.file) {
+                updateData = { ...updateData, imageUrl: `/uploads/${req.file.filename}` };
+            }
+
+            const updatedUser = await userService.updateProfile(userId, updateData);
+            return res
+                .status(200)
+                .json({ success: true, data: updatedUser, message: "User updated successfully" });
+        } catch (error: Error | any) {
+            return res
+                .status(error.statusCode || 500)
+                .json({
+                    success: false,
+                    message: error.message || "Internal Server Error",
+                });
         }
     }
 

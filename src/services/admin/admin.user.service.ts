@@ -5,7 +5,7 @@ import { HttpError } from "../../errors/http-error";
 import path from "path";
 import fs from "fs/promises";
 
-const UPLOADS_ROOT = path.resolve(process.cwd(), "uploads");
+const UPLOADS_ROOT = path.resolve(process.cwd(), "uploads");    
 
 let userRepository = new UserRepository();
 

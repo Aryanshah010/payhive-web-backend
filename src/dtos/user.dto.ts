@@ -34,3 +34,13 @@ export type CreateUserByAdminDto = z.infer<typeof CreateUserByAdminDto>;
 
 export const UpdateUserDto = UserSchema.partial();
 export type UpdateUserDto = z.infer<typeof UpdateUserDto>;
+
+export const UpdateDto = UserSchema.pick(
+    {
+        fullName: true,
+        password: true,
+        imageUrl: true
+    }
+)
+
+export type UpdateDto = z.infer<typeof UpdateDto>;
