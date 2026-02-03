@@ -8,9 +8,31 @@ export interface IUserRepository {
         userId: string,
         newImageUrl: string
     ): Promise<IUser>;
+    getAllUsers(): Promise<IUser[]>;
+    updateUser(userId: string, updateData: Partial<IUser>): Promise<IUser | null>;
+    deleteUser(userId: string): Promise<boolean | null>;
 }
 
 export class UserRepository implements IUserRepository {
+
+    async getAllUsers(): Promise<IUser[]> {
+        const users = await UserModel.find();
+        return users;
+    }
+
+    async updateUser(userId: string, updateData: Partial<IUser>): Promise<IUser | null> {
+        const updatedUser = await UserModel.findByIdAndUpdate(
+            userId,
+            updateData,
+            { new: true }
+        );
+        return updatedUser;
+    }
+
+    async deleteUser(userId: string): Promise<boolean | null> {
+        const result = await UserModel.findByIdAndDelete(userId);
+        return result ? true : false;
+    }
 
     async updateProfilePicture(
         userId: string,
@@ -19,7 +41,7 @@ export class UserRepository implements IUserRepository {
         const user = await UserModel.findByIdAndUpdate(
             userId,
             { imageUrl: newImageUrl },
-            { new: true } 
+            { new: true }
         );
 
         if (!user) {

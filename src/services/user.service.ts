@@ -1,5 +1,5 @@
 import { UserRepository } from "../repositories/user.repository";
-import { CreateUserDto, LoginUserDto } from "../dtos/user.dto";
+import { CreateUserDto, LoginUserDto, UpdateDto, UpdateUserDto } from "../dtos/user.dto";
 import bcryptjs from "bcryptjs";
 import { HttpError } from "../errors/http-error";
 import { JWT_SECRET } from "../configs";
@@ -7,6 +7,8 @@ import jwt from "jsonwebtoken";
 import { IUser } from "../models/user.model";
 import path from "path";
 import fs from "fs";
+
+const UPLOADS_ROOT = path.resolve(process.cwd(), "uploads");
 
 let userRepository = new UserRepository();
 
@@ -63,6 +65,29 @@ export class UserService {
             id,
             imageUrl
         );
+
+        return updatedUser;
+    }
+
+    async updateProfile(userId: string, updateData: UpdateDto & { imageUrl?: string }) {
+        const user = await userRepository.getUserById(userId);
+        if (!user) throw new HttpError(404, "User not found");
+
+        if (updateData.password) {
+            updateData.password = await bcryptjs.hash(updateData.password, 10);
+        }
+
+        const updatedUser = await userRepository.updateUser(userId, updateData);
+        if (!updatedUser) throw new HttpError(500, "Failed to update user");
+
+        if (updateData.imageUrl && user.imageUrl && updateData.imageUrl !== user.imageUrl) {
+            const oldPath = path.join(UPLOADS_ROOT, path.basename(user.imageUrl));
+            fs.unlink(oldPath, (err) => {
+                if (err && err.code !== "ENOENT") {
+                    console.error("Failed to delete old profile picture:", err);
+                }
+            });
+        }
 
         return updatedUser;
     }
