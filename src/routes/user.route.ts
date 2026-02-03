@@ -7,6 +7,6 @@ const userController = new UserController();
 
 const router = Router();
 
-router.put('/:id', authorizedMiddleware, uploads.single('profilePicture'), userController.updateProfile);
+router.put('/updateProfile', authorizedMiddleware, uploads.single('profilePicture'), userController.updateProfile);
 
 export default router;
