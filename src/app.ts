@@ -1,8 +1,6 @@
 import express, { Application, Request, Response } from 'express';
 import dotenv from 'dotenv';
 import bodyparser from 'body-parser'
-import { PORT } from "./configs";
-import { connectDb } from "./database/mongodb";
 import authRouters from "./routes/auth.route";
 import cors from 'cors';
 import path from 'path';

@@ -69,7 +69,7 @@ export class UserService {
         return updatedUser;
     }
 
-    async updateProfile(userId: string, updateData: UpdateDto & { imageUrl?: string }) {
+    async updateProfile( userId:string,updateData: UpdateDto & { imageUrl?: string }) {
         const user = await userRepository.getUserById(userId);
         if (!user) throw new HttpError(404, "User not found");
 

@@ -50,7 +50,13 @@ export class UserController {
 
     async updateProfile(req: Request, res: Response) {
         try {
-            const userId = req.params.id;
+            const userId = req.user?._id;
+            if (!userId) {
+                return res
+                    .status(400)
+                    .json({ success: false, message: "User ID not provided" });
+            }
+
             const parsedData = UpdateDto.safeParse(req.body);
             if (!parsedData.success) {
                 return res.status(400).json(
@@ -58,12 +64,12 @@ export class UserController {
                 );
             }
 
-            let updateData = parsedData.data;
-            if (req.file) {
-                updateData = { ...updateData, imageUrl: `/uploads/${req.file.filename}` };
-            }
+            const updatePayload = {
+                ...parsedData.data,
+                ...(req.file && { imageUrl: `/uploads/${req.file.filename}` })
+            };
 
-            const updatedUser = await userService.updateProfile(userId, updateData);
+            const updatedUser = await userService.updateProfile(userId.toString(), updatePayload);
             return res
                 .status(200)
                 .json({ success: true, data: updatedUser, message: "User updated successfully" });
