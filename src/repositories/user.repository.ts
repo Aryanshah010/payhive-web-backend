@@ -1,4 +1,5 @@
 import { UserModel, IUser } from "../models/user.model";
+import { ClientSession } from "mongoose";
 
 export interface IUserRepository {
     createUser(userData: Partial<IUser>): Promise<IUser>;
@@ -11,6 +12,9 @@ export interface IUserRepository {
     getAllUsers(): Promise<IUser[]>;
     updateUser(userId: string, updateData: Partial<IUser>): Promise<IUser | null>;
     deleteUser(userId: string): Promise<boolean | null>;
+    debitUser(userId: string, amount: number, session: ClientSession): Promise<IUser | null>;
+    creditUser(userId: string, amount: number, session: ClientSession): Promise<IUser | null>;
+    updatePin(userId: string, pinHash: string): Promise<IUser | null>;
 }
 
 interface PaginateArgs {
@@ -51,6 +55,33 @@ export class UserRepository implements IUserRepository {
     async deleteUser(userId: string): Promise<boolean | null> {
         const result = await UserModel.findByIdAndDelete(userId);
         return result ? true : false;
+    }
+
+    async debitUser(userId: string, amount: number, session: ClientSession): Promise<IUser | null> {
+        const user = await UserModel.findOneAndUpdate(
+            { _id: userId, balance: { $gte: amount } },
+            { $inc: { balance: -amount } },
+            { new: true, session }
+        );
+        return user;
+    }
+
+    async creditUser(userId: string, amount: number, session: ClientSession): Promise<IUser | null> {
+        const user = await UserModel.findByIdAndUpdate(
+            userId,
+            { $inc: { balance: amount } },
+            { new: true, session }
+        );
+        return user;
+    }
+
+    async updatePin(userId: string, pinHash: string): Promise<IUser | null> {
+        const user = await UserModel.findByIdAndUpdate(
+            userId,
+            { pinHash },
+            { new: true }
+        );
+        return user;
     }
 
     async updateProfilePicture(

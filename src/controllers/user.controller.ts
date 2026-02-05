@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { UserService } from "../services/user.service";
 import { HttpError } from "../errors/http-error";
 import { UpdateDto } from "../dtos/user.dto";
+import { UpdatePinDto } from "../dtos/pin.dto";
 import z from "zod";
 
 
@@ -108,6 +109,7 @@ export class UserController {
                     fullName: user.fullName,
                     phoneNumber: user.phoneNumber,
                     imageUrl: user.imageUrl,
+                    balance: user.balance,
                     createdAt: user.createdAt,
                     updatedAt: user.updatedAt,
                 },
@@ -116,6 +118,41 @@ export class UserController {
             return res.status(error.statusCode || 500).json({
                 success: false,
                 message: error.message || "Failed to fetch user profile",
+            });
+        }
+    }
+
+    async updatePin(req: Request, res: Response) {
+        try {
+            const userId = req.user?._id;
+            if (!userId) {
+                return res
+                    .status(400)
+                    .json({ success: false, message: "User ID not provided" });
+            }
+
+            const parsedData = UpdatePinDto.safeParse(req.body);
+            if (!parsedData.success) {
+                return res.status(400).json({
+                    success: false,
+                    message: z.prettifyError(parsedData.error),
+                });
+            }
+
+            await userService.setOrUpdatePin(
+                userId.toString(),
+                parsedData.data.pin,
+                parsedData.data.oldPin
+            );
+
+            return res.status(200).json({
+                success: true,
+                message: "PIN updated successfully",
+            });
+        } catch (error: Error | any) {
+            return res.status(error.statusCode || 500).json({
+                success: false,
+                message: error.message || "Failed to update PIN",
             });
         }
     }

@@ -100,5 +100,26 @@ export class UserService {
         return user;
     }
 
+    async setOrUpdatePin(userId: string, pin: string, oldPin?: string) {
+        const user = await userRepository.getUserById(userId);
+        if (!user) throw new HttpError(404, "User not found");
+
+        if (user.pinHash) {
+            if (!oldPin) {
+                throw new HttpError(400, "Old PIN is required");
+            }
+            const validOldPin = await bcryptjs.compare(oldPin, user.pinHash);
+            if (!validOldPin) {
+                throw new HttpError(401, "Invalid old PIN");
+            }
+        }
+
+        const hashedPin = await bcryptjs.hash(pin, 10);
+        const updatedUser = await userRepository.updatePin(userId, hashedPin);
+        if (!updatedUser) throw new HttpError(500, "Failed to update PIN");
+
+        return updatedUser;
+    }
+
 
 }

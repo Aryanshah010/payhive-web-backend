@@ -6,6 +6,7 @@ import cors from 'cors';
 import path from 'path';
 import adminUserRoutes from "./routes/admin/admin.user.route";
 import userProfile from "./routes/user.route";
+import transactionRoutes from "./routes/transaction.route";
 
 dotenv.config();
 console.log(process.env.PORT);
@@ -26,6 +27,7 @@ app.use(bodyparser.json());
 app.use("/api/auth", authRouters);
 app.use('/api/admin/users', adminUserRoutes);
 app.use('/api/profile', userProfile);
+app.use('/api/transactions', transactionRoutes);
 
 app.use("/uploads", express.static(path.join(__dirname, '../uploads')));
 
@@ -33,4 +35,5 @@ app.use("/uploads", express.static(path.join(__dirname, '../uploads')));
 app.get("/", (req: Request, res: Response) => {
     res.send("Hello, World!")
 });
+
 export default app;

@@ -6,6 +6,8 @@ const userMongoSchema: Schema = new Schema(
         fullName: { type: String, required: false },
         phoneNumber: { type: String, required: true, unique: true },
         password: { type: String, required: true },
+        pinHash: { type: String, required: false, default: null },
+        balance: { type: Number, default: 0 },
         role: { type: String, enum: ["user", "admin"], default: "user" },
         imageUrl: { type: String, required: false }
     },
@@ -16,6 +18,8 @@ const userMongoSchema: Schema = new Schema(
 
 export interface IUser extends UserType, Document {
     role: any;
+    pinHash: string | null;
+    balance: number;
     _id: mongoose.Types.ObjectId;
     createdAt: Date;
     updatedAt: Date;
