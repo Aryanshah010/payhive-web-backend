@@ -13,11 +13,30 @@ export interface IUserRepository {
     deleteUser(userId: string): Promise<boolean | null>;
 }
 
+interface PaginateArgs {
+    skip: number;
+    limit: number;
+}
+
 export class UserRepository implements IUserRepository {
 
     async getAllUsers(): Promise<IUser[]> {
         const users = await UserModel.find();
         return users;
+    }
+
+    async findPaginated(query: any, { skip, limit }: PaginateArgs) {
+
+        const usersPromise = UserModel.find(query)
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit)
+            .lean();
+
+        const countPromise = UserModel.countDocuments(query);
+        const [users, total] = await Promise.all([usersPromise, countPromise]);
+
+        return { users, total };
     }
 
     async updateUser(userId: string, updateData: Partial<IUser>): Promise<IUser | null> {

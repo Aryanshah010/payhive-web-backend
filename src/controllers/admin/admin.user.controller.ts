@@ -52,17 +52,19 @@ export class AdminUserController {
 
     async getAllUsers(req: Request, res: Response) {
         try {
-            const users = await adminUserService.getAllUsers();
-            return res
-                .status(200)
-                .json({ success: true, data: users, message: "All Users fetched successfully" });
-        } catch (error: Error | any) {
-            return res
-                .status(error.statusCode || 500)
-                .json({
-                    success: false,
-                    message: error.message || "Internal Server Error",
-                });
+            const page = Math.max(1, parseInt(req.query.page as string || "1", 10));
+            const limit = Math.max(1, parseInt(req.query.limit as string || "10", 10));
+            const search = (req.query.search as string) || "";
+            const role = (req.query.role as string) || "";
+
+            const result = await adminUserService.getAllUsers({ page, limit, search, role });
+
+            return res.status(200).json({ success: true, data: result, message: "All Users fetched successfully" });
+        } catch (error: any) {
+            return res.status(error.statusCode || 500).json({
+                success: false,
+                message: error.message || "Internal Server Error",
+            });
         }
     }
 

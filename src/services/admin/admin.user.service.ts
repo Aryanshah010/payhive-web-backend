@@ -5,9 +5,16 @@ import { HttpError } from "../../errors/http-error";
 import path from "path";
 import fs from "fs/promises";
 
-const UPLOADS_ROOT = path.resolve(process.cwd(), "uploads");    
+const UPLOADS_ROOT = path.resolve(process.cwd(), "uploads");
 
 let userRepository = new UserRepository();
+
+interface GetAllUsersOptions {
+    page: number;
+    limit: number;
+    search?: string;
+    role?: string;
+}
 
 export class AdminUserService {
     async createUser(data: CreateUserByAdminDto & { imageUrl?: string }) {
@@ -35,8 +42,32 @@ export class AdminUserService {
         return user;
     }
 
-    async getAllUsers() {
-        return await userRepository.getAllUsers();
+    async getAllUsers(opts: GetAllUsersOptions) {
+        const { page, limit, search = "", role = "" } = opts;
+
+        const query: any = {};
+        if (search) {
+            query.$or = [
+                { fullName: { $regex: search, $options: "i" } },
+                { phoneNumber: { $regex: search, $options: "i" } },
+            ];
+        }
+        if (role) {
+            query.role = role;
+        }
+
+        const skip = (page - 1) * limit;
+        const { users, total } = await userRepository.findPaginated(query, { skip, limit });
+
+        const totalPages = Math.max(1, Math.ceil(total / limit));
+
+        return {
+            users,
+            total,
+            page,
+            limit,
+            totalPages,
+        };
     }
 
     async deleteOneUser(userId: string) {
