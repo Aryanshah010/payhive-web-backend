@@ -10,6 +10,7 @@ const transactionSchema: Schema = new Schema(
         remark: { type: String, default: "" },
         status: { type: String, enum: ["SUCCESS", "FAILED", "PENDING"], default: "SUCCESS" },
         txId: { type: String, required: true, unique: true },
+        idempotencyKey: { type: String, required: false },
     },
     {
         timestamps: true,
@@ -17,6 +18,10 @@ const transactionSchema: Schema = new Schema(
 );
 
 transactionSchema.index({ from: 1, createdAt: -1 });
+transactionSchema.index(
+    { from: 1, idempotencyKey: 1 },
+    { unique: true, partialFilterExpression: { idempotencyKey: { $type: "string" } } }
+);
 
 export interface ITransaction extends Document {
     from: mongoose.Types.ObjectId;
@@ -25,6 +30,7 @@ export interface ITransaction extends Document {
     remark?: string;
     status: TransactionStatus;
     txId: string;
+    idempotencyKey?: string;
     createdAt: Date;
     updatedAt: Date;
 }

@@ -5,13 +5,13 @@ import { UserModel } from "../../models/user.model";
 describe("POST /api/transactions/confirm - integration", () => {
     const sender = {
         fullName: "Sender User",
-        phoneNumber: "5555555555",
+        phoneNumber: "9876500001",
         password: "Password@123",
     };
 
     const recipient = {
         fullName: "Recipient User",
-        phoneNumber: "6666666666",
+        phoneNumber: "9876500002",
         password: "Password@123",
     };
 
@@ -85,4 +85,3 @@ describe("POST /api/transactions/confirm - integration", () => {
         expect(updatedRecipient!.balance).toBe(amount);
     });
 });
-

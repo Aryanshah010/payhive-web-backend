@@ -11,6 +11,9 @@ let userRepository = new UserRepository();
 let transactionRepository = new TransactionRepository();
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+const PIN_LOCK_MS = PIN_LOCKOUT_MINUTES * 60 * 1000;
+
+const normalizeAmount = (amount: number) => Math.round(amount * 100) / 100;
 
 const mapUser = (user: IUser) => ({
     id: user._id,
@@ -19,6 +22,17 @@ const mapUser = (user: IUser) => ({
 });
 
 export class TransactionService {
+    async lookupBeneficiary(requesterId: string, phoneNumber: string) {
+        const user = await userRepository.getUserByPhoneNumber(phoneNumber);
+        if (!user) throw new HttpError(404, "Recipient not found");
+
+        if (user._id.toString() === requesterId) {
+            throw new HttpError(400, "Cannot send money to yourself");
+        }
+
+        return mapUser(user);
+    }
+
     async previewTransfer(userId: string, toPhoneNumber: string, amount: number, remark?: string) {
         const fromUser = await userRepository.getUserById(userId);
         if (!fromUser) throw new HttpError(404, "User not found");
@@ -30,25 +44,34 @@ export class TransactionService {
             throw new HttpError(400, "Cannot send money to yourself");
         }
 
+        const normalizedAmount = normalizeAmount(amount);
         const sinceDate = new Date(Date.now() - THIRTY_DAYS_MS);
         const avg = await transactionRepository.getAverageDebit(fromUser._id.toString(), sinceDate);
-        const warning = { largeAmount: avg > 0 && amount > 2 * avg, avg30d: avg };
+        const warning = { largeAmount: avg > 0 && normalizedAmount > 2 * avg, avg30d: avg };
 
         return {
             from: mapUser(fromUser),
             to: mapUser(toUser),
-            amount,
+            amount: normalizedAmount,
             remark,
             warning,
         };
     }
 
-    async confirmTransfer(userId: string, toPhoneNumber: string, amount: number, remark: string | undefined, pin: string) {
+    async confirmTransfer(
+        userId: string,
+        toPhoneNumber: string,
+        amount: number,
+        remark: string | undefined,
+        pin: string,
+        idempotencyKey?: string
+    ) {
         const fromUser = await userRepository.getUserById(userId);
         if (!fromUser) throw new HttpError(404, "User not found");
 
         // Per-transaction limit check
-        if (amount > MAX_TRANSFER_AMOUNT) {
+        const normalizedAmount = normalizeAmount(amount);
+        if (normalizedAmount > MAX_TRANSFER_AMOUNT) {
             throw new HttpError(400, "Transfer amount exceeds maximum allowed limit");
         }
 
@@ -60,7 +83,8 @@ export class TransactionService {
 
         // Check existing PIN lockout state before verifying PIN
         if (fromUser.pinLockedUntil && fromUser.pinLockedUntil > now) {
-            throw new HttpError(423, "PIN temporarily locked. Try again later");
+            const remainingMs = fromUser.pinLockedUntil.getTime() - now.getTime();
+            throw new HttpError(423, "PIN temporarily locked. Try again later", { remainingMs });
         }
 
         const validPin = await bcryptjs.compare(pin, fromUser.pinHash);
@@ -87,6 +111,10 @@ export class TransactionService {
 
             await userRepository.updateUser(fromUser._id.toString(), updateData);
 
+            if (errorStatus === 423) {
+                throw new HttpError(errorStatus, errorMessage, { remainingMs: PIN_LOCK_MS });
+            }
+
             throw new HttpError(errorStatus, errorMessage);
         }
 
@@ -107,12 +135,40 @@ export class TransactionService {
 
         const sinceDate = new Date(Date.now() - THIRTY_DAYS_MS);
         const avg = await transactionRepository.getAverageDebit(fromUser._id.toString(), sinceDate);
-        const warning = { largeAmount: avg > 0 && amount > 2 * avg, avg30d: avg };
+        const warning = { largeAmount: avg > 0 && normalizedAmount > 2 * avg, avg30d: avg };
+
+        if (idempotencyKey) {
+            const existing = await transactionRepository.getByIdempotencyKey(
+                fromUser._id.toString(),
+                idempotencyKey
+            );
+            if (existing) {
+                if (
+                    existing.amount !== normalizedAmount ||
+                    existing.to.toString() !== toUser._id.toString()
+                ) {
+                    throw new HttpError(409, "Idempotency key already used with different payload");
+                }
+
+                return {
+                    receipt: {
+                        txId: existing.txId,
+                        status: existing.status,
+                        amount: existing.amount,
+                        remark: existing.remark,
+                        from: mapUser(fromUser),
+                        to: mapUser(toUser),
+                        createdAt: existing.createdAt,
+                    },
+                    warning,
+                };
+            }
+        }
 
         // Daily transfer limit check (before starting MongoDB transaction)
         const today = new Date();
         const todayTotal = await transactionRepository.getTotalDebitForDate(fromUser._id.toString(), today);
-        if (todayTotal + amount > DAILY_TRANSFER_LIMIT) {
+        if (todayTotal + normalizedAmount > DAILY_TRANSFER_LIMIT) {
             throw new HttpError(400, "Daily transfer limit exceeded");
         }
 
@@ -121,12 +177,12 @@ export class TransactionService {
 
         try {
             await session.withTransaction(async () => {
-                const debited = await userRepository.debitUser(fromUser._id.toString(), amount, session);
+                const debited = await userRepository.debitUser(fromUser._id.toString(), normalizedAmount, session);
                 if (!debited) {
                     throw new HttpError(400, "Insufficient balance");
                 }
 
-                const credited = await userRepository.creditUser(toUser._id.toString(), amount, session);
+                const credited = await userRepository.creditUser(toUser._id.toString(), normalizedAmount, session);
                 if (!credited) {
                     throw new HttpError(500, "Failed to credit recipient");
                 }
@@ -135,10 +191,11 @@ export class TransactionService {
                     {
                         from: fromUser._id,
                         to: toUser._id,
-                        amount,
+                        amount: normalizedAmount,
                         remark: remark || "",
                         status: "SUCCESS",
                         txId: uuidv4(),
+                        ...(idempotencyKey ? { idempotencyKey } : {}),
                     },
                     session
                 );
@@ -162,5 +219,56 @@ export class TransactionService {
         }
 
         return { receipt, warning };
+    }
+
+    async getHistory(userId: string, page: number, limit: number) {
+        const safePage = Math.max(1, page);
+        const safeLimit = Math.max(1, Math.min(limit, 50));
+        const skip = (safePage - 1) * safeLimit;
+
+        const { items, total } = await transactionRepository.listByUser(userId, skip, safeLimit);
+        const totalPages = Math.max(1, Math.ceil(total / safeLimit));
+
+        const mapped = await Promise.all(
+            items.map(async (tx) => {
+                const fromUser = await userRepository.getUserById(tx.from.toString());
+                const toUser = await userRepository.getUserById(tx.to.toString());
+                return {
+                    txId: tx.txId,
+                    status: tx.status,
+                    amount: tx.amount,
+                    remark: tx.remark,
+                    from: fromUser ? mapUser(fromUser) : { id: tx.from },
+                    to: toUser ? mapUser(toUser) : { id: tx.to },
+                    createdAt: tx.createdAt,
+                };
+            })
+        );
+
+        return {
+            items: mapped,
+            total,
+            page: safePage,
+            limit: safeLimit,
+            totalPages,
+        };
+    }
+
+    async getByTxId(userId: string, txId: string) {
+        const tx = await transactionRepository.getByTxIdForUser(userId, txId);
+        if (!tx) throw new HttpError(404, "Transaction not found");
+
+        const fromUser = await userRepository.getUserById(tx.from.toString());
+        const toUser = await userRepository.getUserById(tx.to.toString());
+
+        return {
+            txId: tx.txId,
+            status: tx.status,
+            amount: tx.amount,
+            remark: tx.remark,
+            from: fromUser ? mapUser(fromUser) : { id: tx.from },
+            to: toUser ? mapUser(toUser) : { id: tx.to },
+            createdAt: tx.createdAt,
+        };
     }
 }

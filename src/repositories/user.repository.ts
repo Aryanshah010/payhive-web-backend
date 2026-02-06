@@ -15,6 +15,9 @@ export interface IUserRepository {
     debitUser(userId: string, amount: number, session: ClientSession): Promise<IUser | null>;
     creditUser(userId: string, amount: number, session: ClientSession): Promise<IUser | null>;
     updatePin(userId: string, pinHash: string): Promise<IUser | null>;
+    incrementPinAttempts(userId: string): Promise<IUser | null>;
+    resetPinAttempts(userId: string): Promise<IUser | null>;
+    setPinLock(userId: string, lockUntil: Date): Promise<IUser | null>;
 }
 
 interface PaginateArgs {
@@ -79,6 +82,33 @@ export class UserRepository implements IUserRepository {
         const user = await UserModel.findByIdAndUpdate(
             userId,
             { pinHash },
+            { new: true }
+        );
+        return user;
+    }
+
+    async incrementPinAttempts(userId: string): Promise<IUser | null> {
+        const user = await UserModel.findByIdAndUpdate(
+            userId,
+            { $inc: { pinAttempts: 1 } },
+            { new: true }
+        );
+        return user;
+    }
+
+    async resetPinAttempts(userId: string): Promise<IUser | null> {
+        const user = await UserModel.findByIdAndUpdate(
+            userId,
+            { pinAttempts: 0, pinLockedUntil: null },
+            { new: true }
+        );
+        return user;
+    }
+
+    async setPinLock(userId: string, lockUntil: Date): Promise<IUser | null> {
+        const user = await UserModel.findByIdAndUpdate(
+            userId,
+            { pinLockedUntil: lockUntil },
             { new: true }
         );
         return user;
