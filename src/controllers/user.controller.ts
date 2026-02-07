@@ -110,6 +110,7 @@ export class UserController {
                     phoneNumber: user.phoneNumber,
                     email: user.email,
                     imageUrl: user.imageUrl,
+                    hasPin: Boolean(user.pinHash),
                     balance: user.balance,
                     createdAt: user.createdAt,
                     updatedAt: user.updatedAt,

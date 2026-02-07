@@ -1,21 +1,31 @@
 import nodemailer from "nodemailer";
-import { EMAIL_PASS, EMAIL_USER } from "./";
 
 export const transporter = nodemailer.createTransport({
-    service: "gmail",
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true, // use TLS
     auth: {
-        user: EMAIL_USER,
-        pass: EMAIL_PASS,
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS, 
     },
 });
 
+
 export const sendEmail = async (to: string, subject: string, html: string) => {
     const mailOptions = {
-        from: `Payhive <${EMAIL_USER}>`,
+        from: `Payhive <${process.env.EMAIL_USER}>`,
         to,
         subject,
         html,
     };
 
-    await transporter.sendMail(mailOptions);
+    try {
+        const info = await transporter.sendMail(mailOptions);
+        console.log("Email sent:", info.messageId);
+        return info;
+    } catch (err) {
+        console.error("Error sending email:", err);
+        throw err;
+    }
 };
+
