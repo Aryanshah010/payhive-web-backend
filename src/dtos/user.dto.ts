@@ -5,6 +5,7 @@ export const CreateUserDto = UserSchema.pick(
     {
         fullName: true,
         phoneNumber: true,
+        email: true,
         password: true,
     }
 );
@@ -24,6 +25,7 @@ export const CreateUserByAdminDto = UserSchema.pick(
     {
         fullName: true,
         phoneNumber: true,
+        email: true,
         password: true,
         role: true,
         imageUrl: true

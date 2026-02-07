@@ -1,12 +1,13 @@
 import { UserRepository } from "../repositories/user.repository";
-import { CreateUserDto, LoginUserDto, UpdateDto, UpdateUserDto } from "../dtos/user.dto";
+import { CreateUserDto, LoginUserDto, UpdateDto } from "../dtos/user.dto";
 import bcryptjs from "bcryptjs";
 import { HttpError } from "../errors/http-error";
-import { JWT_SECRET } from "../configs";
+import { CLIENT_URL, JWT_SECRET } from "../configs";
 import jwt from "jsonwebtoken";
 import { IUser } from "../models/user.model";
 import path from "path";
 import fs from "fs";
+import { sendEmail } from "../configs/email";
 
 const UPLOADS_ROOT = path.resolve(process.cwd(), "uploads");
 
@@ -17,6 +18,11 @@ export class UserService {
         const checkPhoneNumber = await userRepository.getUserByPhoneNumber(userData.phoneNumber);
         if (checkPhoneNumber) {
             throw new HttpError(409, "Phone Number already in use");
+        }
+        userData.email = userData.email.trim().toLowerCase();
+        const existingEmail = await userRepository.getUserByEmail(userData.email);
+        if (existingEmail) {
+            throw new HttpError(409, "Email already in use");
         }
         const hashedPassword = await bcryptjs.hash(userData.password, 10);
         userData.password = hashedPassword;
@@ -73,6 +79,17 @@ export class UserService {
         const user = await userRepository.getUserById(userId);
         if (!user) throw new HttpError(404, "User not found");
 
+        if (updateData.email) {
+            updateData.email = updateData.email.trim().toLowerCase();
+        }
+
+        if (updateData.email && updateData.email !== user.email) {
+            const existingEmail = await userRepository.getUserByEmail(updateData.email);
+            if (existingEmail && existingEmail._id.toString() !== userId) {
+                throw new HttpError(409, "Email already in use");
+            }
+        }
+
         if (updateData.password) {
             updateData.password = await bcryptjs.hash(updateData.password, 10);
         }
@@ -121,5 +138,50 @@ export class UserService {
         return updatedUser;
     }
 
+    async sendResetPasswordEmail(email?: string) {
+        if (!email) {
+            throw new HttpError(400, "Email is required");
+        }
+
+        const normalizedEmail = email.trim().toLowerCase();
+        const user = await userRepository.getUserByEmail(normalizedEmail);
+        if (!user || !user.email) {
+            throw new HttpError(404, "User not found");
+        }
+
+        const token = jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: "1h" });
+        const resetLink = `${CLIENT_URL}/reset-password?token=${token}`;
+        const html = `<p>Click <a href="${resetLink}">here</a> to reset your password. This link will expire in 1 hour.</p>`;
+
+        await sendEmail(user.email, "Password Reset", html);
+        return { token, user };
+    }
+
+    async resetPassword(token?: string, newPassword?: string) {
+        if (!token || !newPassword) {
+            throw new HttpError(400, "Token and new password are required");
+        }
+
+        let decoded: Record<string, any>;
+        try {
+            decoded = jwt.verify(token, JWT_SECRET) as Record<string, any>;
+        } catch (error) {
+            throw new HttpError(400, "Invalid or expired token");
+        }
+
+        const userId = decoded?.id;
+        if (!userId) {
+            throw new HttpError(400, "Invalid or expired token");
+        }
+
+        const user = await userRepository.getUserById(userId);
+        if (!user) {
+            throw new HttpError(404, "User not found");
+        }
+
+        const hashedPassword = await bcryptjs.hash(newPassword, 10);
+        await userRepository.updateUser(userId, { password: hashedPassword });
+        return user;
+    }
 
 }

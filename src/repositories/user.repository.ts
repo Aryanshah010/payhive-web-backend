@@ -4,6 +4,7 @@ import { ClientSession } from "mongoose";
 export interface IUserRepository {
     createUser(userData: Partial<IUser>): Promise<IUser>;
     getUserByPhoneNumber(phoneNumber: string): Promise<IUser | null>;
+    getUserByEmail(email: string): Promise<IUser | null>;
     getUserById(userId: string): Promise<IUser | null>;
     updateProfilePicture(
         userId: string,
@@ -139,6 +140,11 @@ export class UserRepository implements IUserRepository {
 
     async getUserByPhoneNumber(phoneNumber: string): Promise<IUser | null> {
         const user = await UserModel.findOne({ "phoneNumber": phoneNumber });
+        return user;
+    }
+
+    async getUserByEmail(email: string): Promise<IUser | null> {
+        const user = await UserModel.findOne({ email: email.toLowerCase() });
         return user;
     }
 

@@ -18,11 +18,17 @@ interface GetAllUsersOptions {
 
 export class AdminUserService {
     async createUser(data: CreateUserByAdminDto & { imageUrl?: string }) {
-        const { phoneNumber, password, ...rest } = data;
+        const { phoneNumber, password, email, ...rest } = data;
 
         const existing = await userRepository.getUserByPhoneNumber(phoneNumber);
         if (existing) {
             throw new HttpError(409, "Phone Number already in use");
+        }
+
+        const normalizedEmail = email.trim().toLowerCase();
+        const existingEmail = await userRepository.getUserByEmail(normalizedEmail);
+        if (existingEmail) {
+            throw new HttpError(409, "Email already in use");
         }
 
         const hashedPassword = await bcryptjs.hash(password, 10);
@@ -30,6 +36,7 @@ export class AdminUserService {
         const newUser = await userRepository.createUser({
             phoneNumber,
             password: hashedPassword,
+            email: normalizedEmail,
             ...rest,
         });
 
@@ -98,6 +105,15 @@ export class AdminUserService {
         if (updateData.phoneNumber && updateData.phoneNumber !== user.phoneNumber) {
             const existing = await userRepository.getUserByPhoneNumber(updateData.phoneNumber);
             if (existing) throw new HttpError(409, "Phone Number already in use");
+        }
+
+        if (updateData.email) {
+            updateData.email = updateData.email.trim().toLowerCase();
+        }
+
+        if (updateData.email && updateData.email !== user.email) {
+            const existingEmail = await userRepository.getUserByEmail(updateData.email);
+            if (existingEmail) throw new HttpError(409, "Email already in use");
         }
 
         if (updateData.password) {

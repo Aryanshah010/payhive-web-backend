@@ -108,6 +108,7 @@ export class UserController {
                     _id: user._id,
                     fullName: user.fullName,
                     phoneNumber: user.phoneNumber,
+                    email: user.email,
                     imageUrl: user.imageUrl,
                     balance: user.balance,
                     createdAt: user.createdAt,
