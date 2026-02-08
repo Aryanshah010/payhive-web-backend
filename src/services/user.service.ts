@@ -138,6 +138,22 @@ export class UserService {
         return updatedUser;
     }
 
+    async verifyPin(userId: string, pin: string) {
+        const user = await userRepository.getUserById(userId);
+        if (!user) throw new HttpError(404, "User not found");
+
+        if (!user.pinHash) {
+            throw new HttpError(400, "PIN not set");
+        }
+
+        const validPin = await bcryptjs.compare(pin, user.pinHash);
+        if (!validPin) {
+            throw new HttpError(401, "Invalid PIN");
+        }
+
+        return true;
+    }
+
     async sendResetPasswordEmail(email?: string) {
         if (!email) {
             throw new HttpError(400, "Email is required");

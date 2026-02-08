@@ -2,7 +2,7 @@ import { Request, Response } from "express";
 import { UserService } from "../services/user.service";
 import { HttpError } from "../errors/http-error";
 import { UpdateDto } from "../dtos/user.dto";
-import { UpdatePinDto } from "../dtos/pin.dto";
+import { UpdatePinDto, VerifyPinDto } from "../dtos/pin.dto";
 import z from "zod";
 
 
@@ -155,6 +155,40 @@ export class UserController {
             return res.status(error.statusCode || 500).json({
                 success: false,
                 message: error.message || "Failed to update PIN",
+            });
+        }
+    }
+
+    async verifyPin(req: Request, res: Response) {
+        try {
+            const userId = req.user?._id;
+            if (!userId) {
+                return res
+                    .status(400)
+                    .json({ success: false, message: "User ID not provided" });
+            }
+
+            const parsedData = VerifyPinDto.safeParse(req.body);
+            if (!parsedData.success) {
+                return res.status(400).json({
+                    success: false,
+                    message: z.prettifyError(parsedData.error),
+                });
+            }
+
+            await userService.verifyPin(
+                userId.toString(),
+                parsedData.data.pin
+            );
+
+            return res.status(200).json({
+                success: true,
+                message: "PIN verified",
+            });
+        } catch (error: Error | any) {
+            return res.status(error.statusCode || 500).json({
+                success: false,
+                message: error.message || "Failed to verify PIN",
             });
         }
     }
