@@ -14,6 +14,8 @@ console.log(process.env.PORT);
 
 const app: Application = express();
 
+const isTestEnv = process.env.NODE_ENV === "test";
+
 // Global rate limiter: 100 requests per 15 minutes per IP
 const globalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
@@ -36,7 +38,9 @@ const transactionLimiter = rateLimit({
 // }
 //origin: '*', //accept all
 // app.use(cors(corsOptions));
-app.use(globalLimiter);
+if (!isTestEnv) {
+    app.use(globalLimiter);
+}
 app.use(cors({
     origin: '*',
 }));
@@ -45,7 +49,12 @@ app.use(bodyparser.json());
 app.use("/api/auth", authRouters);
 app.use('/api/admin/users', adminUserRoutes);
 app.use('/api/profile', userProfile);
-app.use('/api/transactions', transactionLimiter, transactionRoutes);
+
+if (isTestEnv) {
+    app.use('/api/transactions', transactionRoutes);
+} else {
+    app.use('/api/transactions', transactionLimiter, transactionRoutes);
+}
 
 app.use("/uploads", express.static(path.join(__dirname, '../uploads')));
 

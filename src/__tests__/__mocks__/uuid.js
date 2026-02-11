@@ -1,3 +1,5 @@
+let counter = 0;
+
 module.exports = {
-    v4: () => 'test-uuid-1234-5678-90ab-cdef',
+    v4: () => `test-uuid-${++counter}`,
 };
