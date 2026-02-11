@@ -1,10 +1,11 @@
 import z from 'zod';
-import { UserSchema } from '../types/user.type';
+import { UserSchema, UserUpdateSchema } from '../types/user.type';
 
 export const CreateUserDto = UserSchema.pick(
     {
         fullName: true,
         phoneNumber: true,
+        email: true,
         password: true,
     }
 );
@@ -24,6 +25,7 @@ export const CreateUserByAdminDto = UserSchema.pick(
     {
         fullName: true,
         phoneNumber: true,
+        email: true,
         password: true,
         role: true,
         imageUrl: true
@@ -35,12 +37,5 @@ export type CreateUserByAdminDto = z.infer<typeof CreateUserByAdminDto>;
 export const UpdateUserDto = UserSchema.partial();
 export type UpdateUserDto = z.infer<typeof UpdateUserDto>;
 
-export const UpdateDto = UserSchema.pick(
-    {
-        fullName: true,
-        password: true,
-        imageUrl: true
-    }
-)
-
+export const UpdateDto = UserUpdateSchema.partial();
 export type UpdateDto = z.infer<typeof UpdateDto>;

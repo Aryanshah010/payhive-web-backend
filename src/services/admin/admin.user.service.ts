@@ -5,17 +5,30 @@ import { HttpError } from "../../errors/http-error";
 import path from "path";
 import fs from "fs/promises";
 
-const UPLOADS_ROOT = path.resolve(process.cwd(), "uploads");    
+const UPLOADS_ROOT = path.resolve(process.cwd(), "uploads");
 
 let userRepository = new UserRepository();
 
+interface GetAllUsersOptions {
+    page: number;
+    limit: number;
+    search?: string;
+    role?: string;
+}
+
 export class AdminUserService {
     async createUser(data: CreateUserByAdminDto & { imageUrl?: string }) {
-        const { phoneNumber, password, ...rest } = data;
+        const { phoneNumber, password, email, ...rest } = data;
 
         const existing = await userRepository.getUserByPhoneNumber(phoneNumber);
         if (existing) {
             throw new HttpError(409, "Phone Number already in use");
+        }
+
+        const normalizedEmail = email.trim().toLowerCase();
+        const existingEmail = await userRepository.getUserByEmail(normalizedEmail);
+        if (existingEmail) {
+            throw new HttpError(409, "Email already in use");
         }
 
         const hashedPassword = await bcryptjs.hash(password, 10);
@@ -23,6 +36,7 @@ export class AdminUserService {
         const newUser = await userRepository.createUser({
             phoneNumber,
             password: hashedPassword,
+            email: normalizedEmail,
             ...rest,
         });
 
@@ -35,8 +49,32 @@ export class AdminUserService {
         return user;
     }
 
-    async getAllUsers() {
-        return await userRepository.getAllUsers();
+    async getAllUsers(opts: GetAllUsersOptions) {
+        const { page, limit, search = "", role = "" } = opts;
+
+        const query: any = {};
+        if (search) {
+            query.$or = [
+                { fullName: { $regex: search, $options: "i" } },
+                { phoneNumber: { $regex: search, $options: "i" } },
+            ];
+        }
+        if (role) {
+            query.role = role;
+        }
+
+        const skip = (page - 1) * limit;
+        const { users, total } = await userRepository.findPaginated(query, { skip, limit });
+
+        const totalPages = Math.max(1, Math.ceil(total / limit));
+
+        return {
+            users,
+            total,
+            page,
+            limit,
+            totalPages,
+        };
     }
 
     async deleteOneUser(userId: string) {
@@ -67,6 +105,15 @@ export class AdminUserService {
         if (updateData.phoneNumber && updateData.phoneNumber !== user.phoneNumber) {
             const existing = await userRepository.getUserByPhoneNumber(updateData.phoneNumber);
             if (existing) throw new HttpError(409, "Phone Number already in use");
+        }
+
+        if (updateData.email) {
+            updateData.email = updateData.email.trim().toLowerCase();
+        }
+
+        if (updateData.email && updateData.email !== user.email) {
+            const existingEmail = await userRepository.getUserByEmail(updateData.email);
+            if (existingEmail) throw new HttpError(409, "Email already in use");
         }
 
         if (updateData.password) {

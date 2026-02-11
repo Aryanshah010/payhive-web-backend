@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { UserService } from "../services/user.service";
 import { HttpError } from "../errors/http-error";
 import { UpdateDto } from "../dtos/user.dto";
+import { UpdatePinDto, VerifyPinDto } from "../dtos/pin.dto";
 import z from "zod";
 
 
@@ -50,7 +51,13 @@ export class UserController {
 
     async updateProfile(req: Request, res: Response) {
         try {
-            const userId = req.params.id;
+            const userId = req.user?._id;
+            if (!userId) {
+                return res
+                    .status(400)
+                    .json({ success: false, message: "User ID not provided" });
+            }
+
             const parsedData = UpdateDto.safeParse(req.body);
             if (!parsedData.success) {
                 return res.status(400).json(
@@ -58,12 +65,12 @@ export class UserController {
                 );
             }
 
-            let updateData = parsedData.data;
-            if (req.file) {
-                updateData = { ...updateData, imageUrl: `/uploads/${req.file.filename}` };
-            }
+            const updatePayload = {
+                ...parsedData.data,
+                ...(req.file && { imageUrl: `/uploads/${req.file.filename}` })
+            };
 
-            const updatedUser = await userService.updateProfile(userId, updateData);
+            const updatedUser = await userService.updateProfile(userId.toString(), updatePayload);
             return res
                 .status(200)
                 .json({ success: true, data: updatedUser, message: "User updated successfully" });
@@ -101,7 +108,10 @@ export class UserController {
                     _id: user._id,
                     fullName: user.fullName,
                     phoneNumber: user.phoneNumber,
+                    email: user.email,
                     imageUrl: user.imageUrl,
+                    hasPin: Boolean(user.pinHash),
+                    balance: user.balance,
                     createdAt: user.createdAt,
                     updatedAt: user.updatedAt,
                 },
@@ -110,6 +120,75 @@ export class UserController {
             return res.status(error.statusCode || 500).json({
                 success: false,
                 message: error.message || "Failed to fetch user profile",
+            });
+        }
+    }
+
+    async updatePin(req: Request, res: Response) {
+        try {
+            const userId = req.user?._id;
+            if (!userId) {
+                return res
+                    .status(400)
+                    .json({ success: false, message: "User ID not provided" });
+            }
+
+            const parsedData = UpdatePinDto.safeParse(req.body);
+            if (!parsedData.success) {
+                return res.status(400).json({
+                    success: false,
+                    message: z.prettifyError(parsedData.error),
+                });
+            }
+
+            await userService.setOrUpdatePin(
+                userId.toString(),
+                parsedData.data.pin,
+                parsedData.data.oldPin
+            );
+
+            return res.status(200).json({
+                success: true,
+                message: "PIN updated successfully",
+            });
+        } catch (error: Error | any) {
+            return res.status(error.statusCode || 500).json({
+                success: false,
+                message: error.message || "Failed to update PIN",
+            });
+        }
+    }
+
+    async verifyPin(req: Request, res: Response) {
+        try {
+            const userId = req.user?._id;
+            if (!userId) {
+                return res
+                    .status(400)
+                    .json({ success: false, message: "User ID not provided" });
+            }
+
+            const parsedData = VerifyPinDto.safeParse(req.body);
+            if (!parsedData.success) {
+                return res.status(400).json({
+                    success: false,
+                    message: z.prettifyError(parsedData.error),
+                });
+            }
+
+            await userService.verifyPin(
+                userId.toString(),
+                parsedData.data.pin
+            );
+
+            return res.status(200).json({
+                success: true,
+                message: "PIN verified",
+            });
+        } catch (error: Error | any) {
+            return res.status(error.statusCode || 500).json({
+                success: false,
+                message: error.message || "Failed to verify PIN",
             });
         }
     }

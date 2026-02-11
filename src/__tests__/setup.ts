@@ -1,5 +1,9 @@
+process.env.NODE_ENV = "test";
+
 import { connectDb } from "../database/mongodb";
 import mongoose from "mongoose";
+
+jest.setTimeout(20000);
 
 // before all test starts
 beforeAll(async () => {

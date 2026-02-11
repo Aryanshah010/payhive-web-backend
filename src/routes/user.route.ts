@@ -8,5 +8,7 @@ const userController = new UserController();
 const router = Router();
 
 router.put('/updateProfile', authorizedMiddleware, uploads.single('profilePicture'), userController.updateProfile);
+router.put('/pin', authorizedMiddleware, userController.updatePin);
+router.post('/verify-pin', authorizedMiddleware, userController.verifyPin);
 
 export default router;
