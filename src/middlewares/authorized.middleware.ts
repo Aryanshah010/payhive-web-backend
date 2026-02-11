@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import { IUser } from '../models/user.model';
 import { UserRepository } from '../repositories/user.repository';
 import { HttpError } from '../errors/http-error';
+import { DeviceRepository } from '../repositories/device.repository';
 
 declare global {
     namespace Express {
@@ -14,6 +15,7 @@ declare global {
 }
 
 let userRepository = new UserRepository();
+let deviceRepository = new DeviceRepository();
 
 export const authorizedMiddleware =
     async (req: Request, res: Response, next: NextFunction) => {
@@ -26,8 +28,27 @@ export const authorizedMiddleware =
             if (!decodedToken || !decodedToken.id) {
                 throw new HttpError(401, 'Unauthorized JWT unverified');
             }
+            if (!decodedToken.deviceId) {
+                throw new HttpError(401, 'Unauthorized device missing');
+            }
             const user = await userRepository.getUserById(decodedToken.id);
             if (!user) throw new HttpError(401, 'Unauthorized user not found');
+
+            const device = await deviceRepository.getByUserAndDeviceId(
+                decodedToken.id,
+                decodedToken.deviceId
+            );
+
+            if (!device) {
+                throw new HttpError(401, 'Unauthorized device not found');
+            }
+            if (device.status !== 'ALLOWED') {
+                throw new HttpError(403, 'Device access blocked');
+            }
+
+            if (!device.lastSeenAt || Date.now() - device.lastSeenAt.getTime() > 5 * 60 * 1000) {
+                await deviceRepository.updateById(device._id.toString(), { lastSeenAt: new Date() });
+            }
             req.user = user;
             next();
         } catch (err: Error | any) {

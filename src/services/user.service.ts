@@ -8,10 +8,12 @@ import { IUser } from "../models/user.model";
 import path from "path";
 import fs from "fs";
 import { sendEmail } from "../configs/email";
+import { DeviceService } from "./device.service";
 
 const UPLOADS_ROOT = path.resolve(process.cwd(), "uploads");
 
 let userRepository = new UserRepository();
+let deviceService = new DeviceService();
 
 export class UserService {
     async registerUser(userData: CreateUserDto) {
@@ -30,7 +32,7 @@ export class UserService {
         return newUser;
     }
 
-    async loginUser(loginData: LoginUserDto) {
+    async loginUser(loginData: LoginUserDto, userAgent?: string) {
         const user = await userRepository.getUserByPhoneNumber(loginData.phoneNumber);
         if (!user) {
             throw new HttpError(404, "User not found!");
@@ -40,14 +42,30 @@ export class UserService {
             throw new HttpError(401, "Invalid credentials");
         }
 
+        const deviceResult = await deviceService.processLogin(
+            user,
+            loginData.deviceId,
+            loginData.deviceName,
+            userAgent
+        );
+
+        if (deviceResult.status !== "ALLOWED") {
+            return {
+                status: deviceResult.status,
+                deviceId: deviceResult.deviceId,
+                approvalRequired: deviceResult.approvalRequired,
+            };
+        }
+
         const payload = {
             id: user._id,
             phoneNumber: user.phoneNumber,
-            role: user.role
-        }
+            role: user.role,
+            deviceId: deviceResult.deviceId,
+        };
 
-        const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
-        return { token, user }
+        const token = jwt.sign(payload, JWT_SECRET, { expiresIn: "7d" });
+        return { status: "ALLOWED", token, user, deviceId: deviceResult.deviceId };
     }
 
 

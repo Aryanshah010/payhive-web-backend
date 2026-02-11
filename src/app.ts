@@ -8,6 +8,7 @@ import adminUserRoutes from "./routes/admin/admin.user.route";
 import userProfile from "./routes/user.route";
 import transactionRoutes from "./routes/transaction.route";
 import rateLimit from 'express-rate-limit';
+import deviceRoutes from "./routes/device.route";
 
 dotenv.config();
 console.log(process.env.PORT);
@@ -49,6 +50,7 @@ app.use(bodyparser.json());
 app.use("/api/auth", authRouters);
 app.use('/api/admin/users', adminUserRoutes);
 app.use('/api/profile', userProfile);
+app.use('/api/devices', deviceRoutes);
 
 if (isTestEnv) {
     app.use('/api/transactions', transactionRoutes);
