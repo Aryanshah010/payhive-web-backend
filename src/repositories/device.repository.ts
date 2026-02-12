@@ -3,6 +3,7 @@ import { DeviceModel, IDevice, DeviceStatus } from "../models/device.model";
 export interface IDeviceRepository {
     createDevice(data: Partial<IDevice>): Promise<IDevice>;
     getByUserAndDeviceId(userId: string, deviceId: string): Promise<IDevice | null>;
+    getLatestByFingerprint(userId: string, deviceName: string, userAgent: string): Promise<IDevice | null>;
     listByUser(userId: string, status?: DeviceStatus): Promise<IDevice[]>;
     countByUser(userId: string): Promise<number>;
     updateById(id: string, data: Partial<IDevice>): Promise<IDevice | null>;
@@ -17,6 +18,14 @@ export class DeviceRepository implements IDeviceRepository {
 
     async getByUserAndDeviceId(userId: string, deviceId: string): Promise<IDevice | null> {
         return DeviceModel.findOne({ userId, deviceId });
+    }
+
+    async getLatestByFingerprint(userId: string, deviceName: string, userAgent: string): Promise<IDevice | null> {
+        return DeviceModel.findOne({
+            userId,
+            deviceName,
+            userAgent,
+        }).sort({ createdAt: -1 });
     }
 
     async listByUser(userId: string, status?: DeviceStatus): Promise<IDevice[]> {

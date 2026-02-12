@@ -18,6 +18,64 @@ export class DeviceService {
         return uuidv4();
     }
 
+    private normalizeDeviceName(deviceName?: string, userAgent?: string) {
+        const cleaned = deviceName?.trim();
+        if (cleaned) {
+            return cleaned;
+        }
+
+        const ua = (userAgent || "").toLowerCase();
+        if (!ua) {
+            return "Unknown Device";
+        }
+        if (ua.includes("iphone") || ua.includes("ipad")) {
+            return "iOS Device";
+        }
+        if (ua.includes("android") || ua.includes("okhttp")) {
+            return "Android Device";
+        }
+        if (ua.includes("windows") || ua.includes("macintosh") || ua.includes("linux")) {
+            return "Web Browser";
+        }
+        return "Unknown Device";
+    }
+
+    private normalizeUserAgent(userAgent?: string) {
+        const cleaned = userAgent?.trim();
+        return cleaned || "unknown-user-agent";
+    }
+
+    private async resolveFingerprintDevice(
+        userId: string,
+        deviceName: string,
+        userAgent: string,
+        now: Date
+    ): Promise<DeviceLoginResult | null> {
+        const fingerprintDevice = await deviceRepository.getLatestByFingerprint(
+            userId,
+            deviceName,
+            userAgent
+        );
+
+        if (!fingerprintDevice) {
+            return null;
+        }
+
+        if (fingerprintDevice.status === "ALLOWED") {
+            await deviceRepository.updateById(fingerprintDevice._id.toString(), {
+                lastSeenAt: now,
+            });
+
+            return { status: "ALLOWED", deviceId: fingerprintDevice.deviceId };
+        }
+
+        return {
+            status: fingerprintDevice.status,
+            deviceId: fingerprintDevice.deviceId,
+            ...(fingerprintDevice.status === "PENDING" ? { approvalRequired: true } : {}),
+        };
+    }
+
     async processLogin(
         user: IUser,
         deviceId?: string,
@@ -26,6 +84,8 @@ export class DeviceService {
     ): Promise<DeviceLoginResult> {
         const now = new Date();
         const existingCount = await deviceRepository.countByUser(user._id.toString());
+        const normalizedDeviceName = this.normalizeDeviceName(deviceName, userAgent);
+        const normalizedUserAgent = this.normalizeUserAgent(userAgent);
 
         if (deviceId) {
             const existingDevice = await deviceRepository.getByUserAndDeviceId(
@@ -37,8 +97,8 @@ export class DeviceService {
                 if (existingDevice.status === "ALLOWED") {
                     await deviceRepository.updateById(existingDevice._id.toString(), {
                         lastSeenAt: now,
-                        ...(deviceName ? { deviceName } : {}),
-                        ...(userAgent ? { userAgent } : {}),
+                        deviceName: normalizedDeviceName,
+                        userAgent: normalizedUserAgent,
                     });
 
                     return { status: "ALLOWED", deviceId: existingDevice.deviceId };
@@ -52,13 +112,23 @@ export class DeviceService {
             }
         }
 
+        const fingerprintMatch = await this.resolveFingerprintDevice(
+            user._id.toString(),
+            normalizedDeviceName,
+            normalizedUserAgent,
+            now
+        );
+        if (fingerprintMatch) {
+            return fingerprintMatch;
+        }
+
         if (existingCount === 0) {
             const newDeviceId = this.createDeviceId();
             await deviceRepository.createDevice({
                 userId: user._id,
                 deviceId: newDeviceId,
-                deviceName: deviceName || null,
-                userAgent: userAgent || null,
+                deviceName: normalizedDeviceName,
+                userAgent: normalizedUserAgent,
                 status: "ALLOWED",
                 lastSeenAt: now,
                 allowedAt: now,
@@ -71,8 +141,8 @@ export class DeviceService {
         await deviceRepository.createDevice({
             userId: user._id,
             deviceId: pendingDeviceId,
-            deviceName: deviceName || null,
-            userAgent: userAgent || null,
+            deviceName: normalizedDeviceName,
+            userAgent: normalizedUserAgent,
             status: "PENDING",
             lastSeenAt: now,
         });
@@ -80,8 +150,8 @@ export class DeviceService {
         try {
             const html = `
                 <p>New device login attempt detected.</p>
-                <p><strong>Device:</strong> ${deviceName || "Unknown"}</p>
-                <p><strong>User-Agent:</strong> ${userAgent || "Unknown"}</p>
+                <p><strong>Device:</strong> ${normalizedDeviceName}</p>
+                <p><strong>User-Agent:</strong> ${normalizedUserAgent}</p>
                 <p>Please approve or block this device in your app.</p>
             `;
             await sendEmail(user.email, "New device login attempt", html);
