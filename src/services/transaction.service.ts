@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 import bcryptjs from "bcryptjs";
 import { v4 as uuidv4 } from "uuid";
 import { UserRepository } from "../repositories/user.repository";
-import { TransactionRepository } from "../repositories/transaction.repository";
+import { TransactionRepository, TransactionHistoryFilterDirection } from "../repositories/transaction.repository";
 import { HttpError } from "../errors/http-error";
 import { IUser } from "../models/user.model";
 import { DAILY_TRANSFER_LIMIT, MAX_TRANSFER_AMOUNT, MAX_PIN_ATTEMPTS, PIN_LOCKOUT_MINUTES } from "../configs";
@@ -221,32 +221,28 @@ export class TransactionService {
         return { receipt, warning };
     }
 
-    async getHistory(userId: string, page: number, limit: number) {
+    async getHistory(
+        userId: string,
+        page: number,
+        limit: number,
+        search: string = "",
+        direction: TransactionHistoryFilterDirection = "all"
+    ) {
         const safePage = Math.max(1, page);
         const safeLimit = Math.max(1, Math.min(limit, 50));
         const skip = (safePage - 1) * safeLimit;
 
-        const { items, total } = await transactionRepository.listByUser(userId, skip, safeLimit);
+        const { items, total } = await transactionRepository.listByUser({
+            userId,
+            skip,
+            limit: safeLimit,
+            search,
+            direction,
+        });
         const totalPages = Math.max(1, Math.ceil(total / safeLimit));
 
-        const mapped = await Promise.all(
-            items.map(async (tx) => {
-                const fromUser = await userRepository.getUserById(tx.from.toString());
-                const toUser = await userRepository.getUserById(tx.to.toString());
-                return {
-                    txId: tx.txId,
-                    status: tx.status,
-                    amount: tx.amount,
-                    remark: tx.remark,
-                    from: fromUser ? mapUser(fromUser) : { id: tx.from },
-                    to: toUser ? mapUser(toUser) : { id: tx.to },
-                    createdAt: tx.createdAt,
-                };
-            })
-        );
-
         return {
-            items: mapped,
+            items,
             total,
             page: safePage,
             limit: safeLimit,

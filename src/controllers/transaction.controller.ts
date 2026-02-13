@@ -1,6 +1,11 @@
 import { Request, Response } from "express";
 import z from "zod";
-import { PreviewTransferDto, ConfirmTransferDto, BeneficiaryLookupDto } from "../dtos/transaction.dto";
+import {
+    PreviewTransferDto,
+    ConfirmTransferDto,
+    BeneficiaryLookupDto,
+    TransactionHistoryQueryDto,
+} from "../dtos/transaction.dto";
 import { TransactionService } from "../services/transaction.service";
 
 let transactionService = new TransactionService();
@@ -113,10 +118,23 @@ export class TransactionController {
                 return res.status(400).json({ success: false, message: "User ID not provided" });
             }
 
-            const page = Math.max(1, parseInt((req.query.page as string) || "1", 10));
-            const limit = Math.max(1, parseInt((req.query.limit as string) || "10", 10));
+            const parsedQuery = TransactionHistoryQueryDto.safeParse(req.query);
+            if (!parsedQuery.success) {
+                return res.status(400).json({
+                    success: false,
+                    message: z.prettifyError(parsedQuery.error),
+                });
+            }
 
-            const data = await transactionService.getHistory(userId.toString(), page, limit);
+            const { page, limit, search, direction } = parsedQuery.data;
+
+            const data = await transactionService.getHistory(
+                userId.toString(),
+                page,
+                limit,
+                search,
+                direction
+            );
             return res.status(200).json({ success: true, message: "Transactions fetched", data });
         } catch (error: Error | any) {
             return res.status(error.statusCode || 500).json({
