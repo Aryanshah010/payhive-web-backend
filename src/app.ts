@@ -9,6 +9,12 @@ import userProfile from "./routes/user.route";
 import transactionRoutes from "./routes/transaction.route";
 import rateLimit from 'express-rate-limit';
 import deviceRoutes from "./routes/device.route";
+import flightRoutes from "./routes/flight.route";
+import hotelRoutes from "./routes/hotel.route";
+import bookingRoutes from "./routes/booking.route";
+import adminFlightRoutes from "./routes/admin/admin.flight.route";
+import adminHotelRoutes from "./routes/admin/admin.hotel.route";
+import adminImportRoutes from "./routes/admin/admin.import.route";
 
 dotenv.config();
 console.log(process.env.PORT);
@@ -49,8 +55,14 @@ app.use(cors({
 app.use(bodyparser.json());
 app.use("/api/auth", authRouters);
 app.use('/api/admin/users', adminUserRoutes);
+app.use('/api/admin/flights', adminFlightRoutes);
+app.use('/api/admin/hotels', adminHotelRoutes);
+app.use('/api/admin/import', adminImportRoutes);
 app.use('/api/profile', userProfile);
 app.use('/api/devices', deviceRoutes);
+app.use('/api/flights', flightRoutes);
+app.use('/api/hotels', hotelRoutes);
+app.use('/api/bookings', bookingRoutes);
 
 if (isTestEnv) {
     app.use('/api/transactions', transactionRoutes);

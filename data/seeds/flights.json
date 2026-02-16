@@ -1,0 +1,72 @@
+[
+  {
+    "airline": "Buddha Air",
+    "flightNumber": "U4-201",
+    "from": "Kathmandu (KTM)",
+    "to": "Pokhara (PKR)",
+    "departure": "2026-03-15T02:15:00.000Z",
+    "arrival": "2026-03-15T03:00:00.000Z",
+    "durationMinutes": 45,
+    "class": "Economy",
+    "price": 4500,
+    "seatsTotal": 72,
+    "seatsAvailable": 40,
+    "meta": { "terminal": "Domestic", "gate": "D3" }
+  },
+  {
+    "airline": "Yeti Airlines",
+    "flightNumber": "YT-305",
+    "from": "Kathmandu (KTM)",
+    "to": "Bhairahawa (BWA)",
+    "departure": "2026-03-16T04:30:00.000Z",
+    "arrival": "2026-03-16T05:20:00.000Z",
+    "durationMinutes": 50,
+    "class": "Economy",
+    "price": 5200,
+    "seatsTotal": 80,
+    "seatsAvailable": 28,
+    "meta": { "terminal": "Domestic", "gate": "D1" }
+  },
+  {
+    "airline": "Shree Airlines",
+    "flightNumber": "SHA-412",
+    "from": "Kathmandu (KTM)",
+    "to": "Nepalgunj (KEP)",
+    "departure": "2026-03-17T06:00:00.000Z",
+    "arrival": "2026-03-17T07:10:00.000Z",
+    "durationMinutes": 70,
+    "class": "Economy",
+    "price": 6800,
+    "seatsTotal": 88,
+    "seatsAvailable": 35,
+    "meta": { "terminal": "Domestic", "gate": "D4" }
+  },
+  {
+    "airline": "Buddha Air",
+    "flightNumber": "U4-410",
+    "from": "Pokhara (PKR)",
+    "to": "Kathmandu (KTM)",
+    "departure": "2026-03-18T09:15:00.000Z",
+    "arrival": "2026-03-18T10:00:00.000Z",
+    "durationMinutes": 45,
+    "class": "Economy",
+    "price": 4500,
+    "seatsTotal": 72,
+    "seatsAvailable": 18,
+    "meta": { "terminal": "Domestic", "gate": "D2" }
+  },
+  {
+    "airline": "Yeti Airlines",
+    "flightNumber": "YT-220",
+    "from": "Biratnagar (BIR)",
+    "to": "Kathmandu (KTM)",
+    "departure": "2026-03-19T03:45:00.000Z",
+    "arrival": "2026-03-19T04:40:00.000Z",
+    "durationMinutes": 55,
+    "class": "Economy",
+    "price": 5400,
+    "seatsTotal": 80,
+    "seatsAvailable": 50,
+    "meta": { "terminal": "Domestic", "gate": "D5" }
+  }
+]

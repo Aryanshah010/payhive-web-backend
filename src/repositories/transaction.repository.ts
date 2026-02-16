@@ -30,18 +30,19 @@ export interface TransactionHistoryListByUserParams {
 }
 
 export interface ITransactionRepository {
-    createTransaction(data: Partial<ITransaction>, session: ClientSession): Promise<ITransaction>;
+    createTransaction(data: Partial<ITransaction>, session?: ClientSession): Promise<ITransaction>;
     getAverageDebit(userId: string, sinceDate: Date): Promise<number>;
     getTotalDebitForDate(userId: string, date: Date): Promise<number>;
     getByIdempotencyKey(userId: string, idempotencyKey: string): Promise<ITransaction | null>;
+    getBySenderAndIdempotencyKey(userId: string, idempotencyKey: string): Promise<ITransaction | null>;
     getByTxIdForUser(userId: string, txId: string): Promise<ITransaction | null>;
     listByUser(params: TransactionHistoryListByUserParams): Promise<{ items: TransactionHistoryListItem[]; total: number }>;
 }
 
 export class TransactionRepository implements ITransactionRepository {
-    async createTransaction(data: Partial<ITransaction>, session: ClientSession): Promise<ITransaction> {
+    async createTransaction(data: Partial<ITransaction>, session?: ClientSession): Promise<ITransaction> {
         const tx = new TransactionModel(data);
-        return await tx.save({ session });
+        return await tx.save(session ? { session } : {});
     }
 
     async getAverageDebit(userId: string, sinceDate: Date): Promise<number> {
@@ -85,6 +86,10 @@ export class TransactionRepository implements ITransactionRepository {
             from: new mongoose.Types.ObjectId(userId),
             idempotencyKey,
         });
+    }
+
+    async getBySenderAndIdempotencyKey(userId: string, idempotencyKey: string): Promise<ITransaction | null> {
+        return this.getByIdempotencyKey(userId, idempotencyKey);
     }
 
     async getByTxIdForUser(userId: string, txId: string): Promise<ITransaction | null> {

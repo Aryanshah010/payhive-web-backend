@@ -1,6 +1,7 @@
 import mongoose, { Document, Schema } from "mongoose";
 
 export type TransactionStatus = "SUCCESS" | "FAILED" | "PENDING";
+export type TransactionPaymentType = "TRANSFER" | "BOOKING_PAYMENT" | "BOOKING_REFUND_COMP";
 
 const transactionSchema: Schema = new Schema(
     {
@@ -11,6 +12,12 @@ const transactionSchema: Schema = new Schema(
         status: { type: String, enum: ["SUCCESS", "FAILED", "PENDING"], default: "SUCCESS" },
         txId: { type: String, required: true, unique: true },
         idempotencyKey: { type: String, required: false },
+        bookingId: { type: Schema.Types.ObjectId, ref: "Booking", required: false, default: null },
+        paymentType: {
+            type: String,
+            enum: ["TRANSFER", "BOOKING_PAYMENT", "BOOKING_REFUND_COMP"],
+            default: "TRANSFER",
+        },
     },
     {
         timestamps: true,
@@ -31,6 +38,8 @@ export interface ITransaction extends Document {
     status: TransactionStatus;
     txId: string;
     idempotencyKey?: string;
+    bookingId?: mongoose.Types.ObjectId | null;
+    paymentType?: TransactionPaymentType;
     createdAt: Date;
     updatedAt: Date;
 }

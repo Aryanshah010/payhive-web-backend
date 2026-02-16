@@ -11,10 +11,11 @@ export interface IUserRepository {
         newImageUrl: string
     ): Promise<IUser>;
     getAllUsers(): Promise<IUser[]>;
+    getFirstAdminUser(): Promise<IUser | null>;
     updateUser(userId: string, updateData: Partial<IUser>): Promise<IUser | null>;
     deleteUser(userId: string): Promise<boolean | null>;
-    debitUser(userId: string, amount: number, session: ClientSession): Promise<IUser | null>;
-    creditUser(userId: string, amount: number, session: ClientSession): Promise<IUser | null>;
+    debitUser(userId: string, amount: number, session?: ClientSession): Promise<IUser | null>;
+    creditUser(userId: string, amount: number, session?: ClientSession): Promise<IUser | null>;
     updatePin(userId: string, pinHash: string): Promise<IUser | null>;
     incrementPinAttempts(userId: string): Promise<IUser | null>;
     resetPinAttempts(userId: string): Promise<IUser | null>;
@@ -31,6 +32,10 @@ export class UserRepository implements IUserRepository {
     async getAllUsers(): Promise<IUser[]> {
         const users = await UserModel.find();
         return users;
+    }
+
+    async getFirstAdminUser(): Promise<IUser | null> {
+        return UserModel.findOne({ role: "admin" }).sort({ createdAt: 1 });
     }
 
     async findPaginated(query: any, { skip, limit }: PaginateArgs) {
@@ -61,20 +66,20 @@ export class UserRepository implements IUserRepository {
         return result ? true : false;
     }
 
-    async debitUser(userId: string, amount: number, session: ClientSession): Promise<IUser | null> {
+    async debitUser(userId: string, amount: number, session?: ClientSession): Promise<IUser | null> {
         const user = await UserModel.findOneAndUpdate(
             { _id: userId, balance: { $gte: amount } },
             { $inc: { balance: -amount } },
-            { new: true, session }
+            { new: true, ...(session ? { session } : {}) }
         );
         return user;
     }
 
-    async creditUser(userId: string, amount: number, session: ClientSession): Promise<IUser | null> {
+    async creditUser(userId: string, amount: number, session?: ClientSession): Promise<IUser | null> {
         const user = await UserModel.findByIdAndUpdate(
             userId,
             { $inc: { balance: amount } },
-            { new: true, session }
+            { new: true, ...(session ? { session } : {}) }
         );
         return user;
     }
