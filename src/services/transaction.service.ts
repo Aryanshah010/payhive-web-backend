@@ -262,6 +262,8 @@ export class TransactionService {
             status: tx.status,
             amount: tx.amount,
             remark: tx.remark,
+            paymentType: tx.paymentType,
+            meta: tx.meta ?? null,
             from: fromUser ? mapUser(fromUser) : { id: tx.from },
             to: toUser ? mapUser(toUser) : { id: tx.to },
             createdAt: tx.createdAt,

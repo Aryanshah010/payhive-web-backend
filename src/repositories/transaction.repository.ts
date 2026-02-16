@@ -15,6 +15,8 @@ export interface TransactionHistoryListItem {
     status: string;
     amount: number;
     remark?: string;
+    paymentType?: string;
+    meta?: Record<string, unknown> | null;
     from: TransactionHistoryUserSnapshot;
     to: TransactionHistoryUserSnapshot;
     createdAt: Date;
@@ -130,6 +132,8 @@ export class TransactionRepository implements ITransactionRepository {
                     status: 1,
                     amount: 1,
                     remark: 1,
+                    paymentType: 1,
+                    meta: 1,
                     createdAt: 1,
                     direction: 1,
                     from: {

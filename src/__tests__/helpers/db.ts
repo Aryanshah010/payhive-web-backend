@@ -3,6 +3,7 @@ import { TransactionModel } from "../../models/transaction.model";
 import { BookingModel } from "../../models/booking.model";
 import { FlightModel } from "../../models/flight.model";
 import { HotelModel } from "../../models/hotel.model";
+import { UtilityModel } from "../../models/utility.model";
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -31,6 +32,13 @@ export const cleanupTestData = async (prefix: string) => {
             { name: regex },
             { city: regex },
             { roomType: regex },
+        ],
+    });
+    await UtilityModel.deleteMany({
+        $or: [
+            { provider: regex },
+            { name: regex },
+            { packageLabel: regex },
         ],
     });
 

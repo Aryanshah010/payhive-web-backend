@@ -1,6 +1,6 @@
 # PayHive Web Backend
 
-Node.js + Express + TypeScript + MongoDB backend for authentication, wallet transfers, and travel services (flights/hotels) with booking + wallet payment.
+Node.js + Express + TypeScript + MongoDB backend for authentication, wallet transfers, service catalogs (flights/hotels/internet/topup), booking, and utility wallet payments.
 
 ## Setup
 
@@ -31,12 +31,13 @@ npm run dev
 
 API base: `http://localhost:5050/api`
 
-## Seed Flights/Hotels
+## Seed Flights/Hotels/Utilities
 
 Seed files live in:
 
 - `data/seeds/flights.json`
 - `data/seeds/hotels.json`
+- `data/seeds/utilities.json`
 
 ### CLI import
 
@@ -78,12 +79,28 @@ Body:
 
 - `POST /api/admin/import`
 
+- `POST /api/admin/internet-services`
+- `GET /api/admin/internet-services`
+- `GET /api/admin/internet-services/:id`
+- `PUT /api/admin/internet-services/:id`
+- `DELETE /api/admin/internet-services/:id`
+
+- `POST /api/admin/topup-services`
+- `GET /api/admin/topup-services`
+- `GET /api/admin/topup-services/:id`
+- `PUT /api/admin/topup-services/:id`
+- `DELETE /api/admin/topup-services/:id`
+
 ### Public
 
 - `GET /api/flights?from=&to=&date=&page=&limit=`
 - `GET /api/flights/:id`
 - `GET /api/hotels?city=&checkin=&nights=&page=&limit=`
 - `GET /api/hotels/:id`
+- `GET /api/internet-services?provider=&search=&page=&limit=`
+- `GET /api/internet-services/:id`
+- `GET /api/topup-services?provider=&search=&page=&limit=`
+- `GET /api/topup-services/:id`
 
 ### Bookings (auth required)
 
@@ -91,6 +108,15 @@ Body:
 - `GET /api/bookings?page=&limit=&status=&type=`
 - `GET /api/bookings/:id`
 - `POST /api/bookings/:id/pay`
+  - optional header: `Idempotency-Key`
+
+### Utility Payments (auth required)
+
+- `POST /api/internet-services/:id/pay`
+  - body: `{ "customerId": "..." }`
+  - optional header: `Idempotency-Key`
+- `POST /api/topup-services/:id/pay`
+  - body: `{ "phoneNumber": "9876543210" }`
   - optional header: `Idempotency-Key`
 
 ## Sample Requests
@@ -170,3 +196,4 @@ Insufficient funds:
 - Booking creation reserves inventory immediately (no wallet deduction at this stage).
 - Payment endpoint is idempotent when `Idempotency-Key` is provided.
 - Transaction-first strategy is used with MongoDB sessions; fallback compensation logic is used when transactions are unavailable.
+- Utility payment receipts are stored in transaction `meta` and visible through `/api/transactions` history.

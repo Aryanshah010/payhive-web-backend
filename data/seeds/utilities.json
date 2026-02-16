@@ -1,0 +1,42 @@
+[
+  {
+    "type": "internet",
+    "provider": "Airtel Xstream",
+    "name": "Fiber 100 Mbps",
+    "packageLabel": "Monthly",
+    "amount": 999,
+    "validationRegex": "^[A-Z0-9]{6,16}$",
+    "isActive": true,
+    "meta": { "category": "broadband" }
+  },
+  {
+    "type": "internet",
+    "provider": "JioFiber",
+    "name": "Fiber 150 Mbps",
+    "packageLabel": "Monthly",
+    "amount": 1199,
+    "validationRegex": "^[A-Z0-9]{6,16}$",
+    "isActive": true,
+    "meta": { "category": "broadband" }
+  },
+  {
+    "type": "topup",
+    "provider": "Airtel",
+    "name": "Data Pack 1.5GB/day",
+    "packageLabel": "28 Days",
+    "amount": 349,
+    "validationRegex": "^[0-9]{10}$",
+    "isActive": true,
+    "meta": { "category": "mobile-data" }
+  },
+  {
+    "type": "topup",
+    "provider": "Jio",
+    "name": "Unlimited 2GB/day",
+    "packageLabel": "28 Days",
+    "amount": 399,
+    "validationRegex": "^[0-9]{10}$",
+    "isActive": true,
+    "meta": { "category": "mobile-recharge" }
+  }
+]
