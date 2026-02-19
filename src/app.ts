@@ -14,7 +14,6 @@ import hotelRoutes from "./routes/hotel.route";
 import bookingRoutes from "./routes/booking.route";
 import adminFlightRoutes from "./routes/admin/admin.flight.route";
 import adminHotelRoutes from "./routes/admin/admin.hotel.route";
-import adminImportRoutes from "./routes/admin/admin.import.route";
 import adminInternetServiceRoutes from "./routes/admin/admin.internet-service.route";
 import adminTopupServiceRoutes from "./routes/admin/admin.topup-service.route";
 import internetServiceRoutes from "./routes/internet-service.route";
@@ -27,7 +26,7 @@ const app: Application = express();
 
 const isTestEnv = process.env.NODE_ENV === "test";
 
-// Global rate limiter: 100 requests per 15 minutes per IP
+// Global rate limiter: 100 requests per 1 minutes per IP
 const globalLimiter = rateLimit({
     windowMs: 1 * 60 * 1000,
     max: 100,
@@ -61,7 +60,6 @@ app.use("/api/auth", authRouters);
 app.use('/api/admin/users', adminUserRoutes);
 app.use('/api/admin/flights', adminFlightRoutes);
 app.use('/api/admin/hotels', adminHotelRoutes);
-app.use('/api/admin/import', adminImportRoutes);
 app.use('/api/admin/internet-services', adminInternetServiceRoutes);
 app.use('/api/admin/topup-services', adminTopupServiceRoutes);
 app.use('/api/profile', userProfile);

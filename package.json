@@ -8,8 +8,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "nodemon --exec ts-node src/index.ts",
-    "test": "jest --verbose --detectOpenHandles",
-    "seed:services": "ts-node src/scripts/import-services.seed.ts"
+    "test": "jest --verbose --detectOpenHandles"
   },
   "dependencies": {
     "@types/nodemailer": "^7.0.9",
