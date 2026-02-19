@@ -8,6 +8,7 @@ import { FlightRepository } from "../repositories/flight.repository";
 import { HotelRepository } from "../repositories/hotel.repository";
 import { TransactionRepository } from "../repositories/transaction.repository";
 import { UserRepository } from "../repositories/user.repository";
+import { IUser } from "../models/user.model";
 
 let bookingRepository = new BookingRepository();
 let flightRepository = new FlightRepository();
@@ -297,26 +298,33 @@ export class BookingService {
     }
 
     private async resolvePayee(userId: string) {
+        let payee: IUser | null = null;
         if (BOOKING_PAYEE_USER_ID) {
             const configuredPayee = await userRepository.getUserById(BOOKING_PAYEE_USER_ID);
             if (configuredPayee) {
-                return configuredPayee;
+                payee = configuredPayee;
             }
         }
 
-        const firstAdmin = await userRepository.getFirstAdminUser();
-        if (!firstAdmin) {
+        if (!payee) {
+            payee = await userRepository.getFirstAdminUser();
+        }
+
+        if (!payee) {
             throw new HttpError(500, "Booking payee wallet not configured", {
                 code: "PAYEE_NOT_CONFIGURED",
             });
         }
 
-        if (firstAdmin._id.toString() === userId) {
-            // If payer is admin, still allow self-pay destination to preserve deterministic configuration.
-            return firstAdmin;
+        if (payee._id.toString() === userId) {
+            throw new HttpError(
+                500,
+                "Booking payee wallet cannot be the same as payer wallet. Configure BOOKING_PAYEE_USER_ID to a different user.",
+                { code: "PAYEE_MISCONFIGURED" }
+            );
         }
 
-        return firstAdmin;
+        return payee;
     }
 
     private async payWithMongoTransaction({

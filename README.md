@@ -21,7 +21,7 @@ Required env vars (existing + new):
 - `DAILY_TRANSFER_LIMIT`
 - `MAX_PIN_ATTEMPTS`
 - `PIN_LOCKOUT_MINUTES`
-- `BOOKING_PAYEE_USER_ID` (optional; if empty, booking payments fall back to first admin user)
+- `BOOKING_PAYEE_USER_ID` (optional; if empty, booking + utility payments fall back to first admin user. Must be a different wallet from the payer or payment fails with `PAYEE_MISCONFIGURED`)
 
 ## Run
 

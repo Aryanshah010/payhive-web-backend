@@ -4,6 +4,7 @@ import { cleanupTestData } from "../helpers/db";
 import { makeUser } from "../helpers/data";
 import { TransactionModel } from "../../models/transaction.model";
 import { UserModel } from "../../models/user.model";
+import * as configs from "../../configs";
 
 const prefix = "itest-util+";
 
@@ -204,6 +205,47 @@ describe("Utility Services Integration", () => {
         expect(txDetailRes.statusCode).toBe(200);
         expect(txDetailRes.body.data.paymentType).toBe("UTILITY_PAYMENT");
         expect(txDetailRes.body.data.meta.serviceType).toBe("internet");
+    });
+
+    test("utility payment fails when payee wallet resolves to payer wallet", async () => {
+        const originalPayeeUserId = (configs as any).BOOKING_PAYEE_USER_ID;
+        try {
+            const admin = await registerAndLogin("admin-util-payee-self");
+            await promoteToAdmin(admin.id);
+            await UserModel.findByIdAndUpdate(admin.id, { balance: 5000 });
+
+            (configs as any).BOOKING_PAYEE_USER_ID = admin.id;
+
+            const createInternetRes = await request(app)
+                .post("/api/admin/internet-services")
+                .set("Authorization", `Bearer ${admin.token}`)
+                .send(makeInternetPayload("payee-self", { amount: 1200 }))
+                .expect(201);
+
+            const serviceId = createInternetRes.body.data._id;
+            const balanceBefore = (await UserModel.findById(admin.id))?.balance;
+
+            const payRes = await request(app)
+                .post(`/api/internet-services/${serviceId}/pay`)
+                .set("Authorization", `Bearer ${admin.token}`)
+                .send({ customerId: "ABCD1234" });
+
+            expect(payRes.statusCode).toBe(500);
+            expect(payRes.body.code).toBe("PAYEE_MISCONFIGURED");
+            expect(payRes.body.message).toContain("BOOKING_PAYEE_USER_ID");
+
+            const balanceAfter = (await UserModel.findById(admin.id))?.balance;
+            expect(balanceAfter).toBe(balanceBefore);
+
+            const paymentTx = await TransactionModel.findOne({
+                from: admin.id,
+                paymentType: "UTILITY_PAYMENT",
+                "meta.serviceId": serviceId,
+            });
+            expect(paymentTx).toBeNull();
+        } finally {
+            (configs as any).BOOKING_PAYEE_USER_ID = originalPayeeUserId;
+        }
     });
 
     test("topup payment success + validation failure + insufficient funds", async () => {

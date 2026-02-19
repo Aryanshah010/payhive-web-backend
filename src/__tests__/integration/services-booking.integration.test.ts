@@ -5,6 +5,7 @@ import { makeUser } from "../helpers/data";
 import { BookingModel } from "../../models/booking.model";
 import { TransactionModel } from "../../models/transaction.model";
 import { UserModel } from "../../models/user.model";
+import * as configs from "../../configs";
 
 const prefix = "itest-svc+";
 
@@ -328,6 +329,55 @@ describe("Services + Booking Integration", () => {
         const payeeBefore = adminUsersBefore.find((item) => item._id.toString() === txDoc?.to.toString());
         const payeeAfter = await UserModel.findById(txDoc?.to);
         expect(payeeAfter?.balance).toBe((payeeBefore?.balance || 0) + 5000);
+    });
+
+    test("pay booking fails when payee wallet resolves to payer wallet", async () => {
+        const originalPayeeUserId = (configs as any).BOOKING_PAYEE_USER_ID;
+        try {
+            const admin = await registerAndLogin("admin-payee-self");
+            await promoteToAdmin(admin.id);
+            await UserModel.findByIdAndUpdate(admin.id, { balance: 10000 });
+
+            (configs as any).BOOKING_PAYEE_USER_ID = admin.id;
+
+            const createFlightRes = await request(app)
+                .post("/api/admin/flights")
+                .set("Authorization", `Bearer ${admin.token}`)
+                .send(buildFlightPayload("payee-self", { price: 2200, seatsTotal: 5, seatsAvailable: 5 }))
+                .expect(201);
+
+            const bookingRes = await request(app)
+                .post("/api/bookings")
+                .set("Authorization", `Bearer ${admin.token}`)
+                .send({ type: "flight", itemId: createFlightRes.body.data._id, quantity: 1 })
+                .expect(201);
+
+            const bookingId = bookingRes.body.data.bookingId;
+            const balanceBefore = (await UserModel.findById(admin.id))?.balance;
+
+            const payRes = await request(app)
+                .post(`/api/bookings/${bookingId}/pay`)
+                .set("Authorization", `Bearer ${admin.token}`);
+
+            expect(payRes.statusCode).toBe(500);
+            expect(payRes.body.code).toBe("PAYEE_MISCONFIGURED");
+            expect(payRes.body.message).toContain("BOOKING_PAYEE_USER_ID");
+
+            const balanceAfter = (await UserModel.findById(admin.id))?.balance;
+            expect(balanceAfter).toBe(balanceBefore);
+
+            const bookingDoc = await BookingModel.findById(bookingId);
+            expect(bookingDoc?.status).toBe("created");
+            expect(bookingDoc?.paymentTxnId).toBeNull();
+
+            const paymentTx = await TransactionModel.findOne({
+                bookingId: bookingDoc?._id,
+                paymentType: "BOOKING_PAYMENT",
+            });
+            expect(paymentTx).toBeNull();
+        } finally {
+            (configs as any).BOOKING_PAYEE_USER_ID = originalPayeeUserId;
+        }
     });
 
     test("insufficient balance prevents payment and idempotency avoids double charge", async () => {

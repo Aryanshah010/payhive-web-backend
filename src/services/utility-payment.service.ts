@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from "uuid";
 import { BOOKING_PAYEE_USER_ID } from "../configs";
 import { HttpError } from "../errors/http-error";
 import { ITransaction } from "../models/transaction.model";
+import { IUser } from "../models/user.model";
 import { UtilityType } from "../models/utility.model";
 import { TransactionRepository } from "../repositories/transaction.repository";
 import { UserRepository } from "../repositories/user.repository";
@@ -124,7 +125,7 @@ export class UtilityPaymentService {
             }
         }
 
-        const payee = await this.resolvePayee();
+        const payee = await this.resolvePayee(userId);
         try {
             return await this.payWithTransaction({
                 userId,
@@ -174,22 +175,34 @@ export class UtilityPaymentService {
         }
     }
 
-    private async resolvePayee() {
+    private async resolvePayee(userId: string) {
+        let payee: IUser | null = null;
         if (BOOKING_PAYEE_USER_ID) {
             const configuredPayee = await userRepository.getUserById(BOOKING_PAYEE_USER_ID);
             if (configuredPayee) {
-                return configuredPayee;
+                payee = configuredPayee;
             }
         }
 
-        const firstAdmin = await userRepository.getFirstAdminUser();
-        if (!firstAdmin) {
+        if (!payee) {
+            payee = await userRepository.getFirstAdminUser();
+        }
+
+        if (!payee) {
             throw new HttpError(500, "Utility payee wallet not configured", {
                 code: "PAYEE_NOT_CONFIGURED",
             });
         }
 
-        return firstAdmin;
+        if (payee._id.toString() === userId) {
+            throw new HttpError(
+                500,
+                "Utility payee wallet cannot be the same as payer wallet. Configure BOOKING_PAYEE_USER_ID to a different user.",
+                { code: "PAYEE_MISCONFIGURED" }
+            );
+        }
+
+        return payee;
     }
 
     private buildReceipt({
