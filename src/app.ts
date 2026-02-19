@@ -8,6 +8,16 @@ import adminUserRoutes from "./routes/admin/admin.user.route";
 import userProfile from "./routes/user.route";
 import transactionRoutes from "./routes/transaction.route";
 import rateLimit from 'express-rate-limit';
+import deviceRoutes from "./routes/device.route";
+import flightRoutes from "./routes/flight.route";
+import hotelRoutes from "./routes/hotel.route";
+import bookingRoutes from "./routes/booking.route";
+import adminFlightRoutes from "./routes/admin/admin.flight.route";
+import adminHotelRoutes from "./routes/admin/admin.hotel.route";
+import adminInternetServiceRoutes from "./routes/admin/admin.internet-service.route";
+import adminTopupServiceRoutes from "./routes/admin/admin.topup-service.route";
+import internetServiceRoutes from "./routes/internet-service.route";
+import topupServiceRoutes from "./routes/topup-service.route";
 
 dotenv.config();
 console.log(process.env.PORT);
@@ -16,9 +26,9 @@ const app: Application = express();
 
 const isTestEnv = process.env.NODE_ENV === "test";
 
-// Global rate limiter: 100 requests per 15 minutes per IP
+// Global rate limiter: 100 requests per 1 minutes per IP
 const globalLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
+    windowMs: 1 * 60 * 1000,
     max: 100,
     standardHeaders: true,
     legacyHeaders: false,
@@ -48,7 +58,17 @@ app.use(cors({
 app.use(bodyparser.json());
 app.use("/api/auth", authRouters);
 app.use('/api/admin/users', adminUserRoutes);
+app.use('/api/admin/flights', adminFlightRoutes);
+app.use('/api/admin/hotels', adminHotelRoutes);
+app.use('/api/admin/internet-services', adminInternetServiceRoutes);
+app.use('/api/admin/topup-services', adminTopupServiceRoutes);
 app.use('/api/profile', userProfile);
+app.use('/api/devices', deviceRoutes);
+app.use('/api/flights', flightRoutes);
+app.use('/api/hotels', hotelRoutes);
+app.use('/api/internet-services', internetServiceRoutes);
+app.use('/api/topup-services', topupServiceRoutes);
+app.use('/api/bookings', bookingRoutes);
 
 if (isTestEnv) {
     app.use('/api/transactions', transactionRoutes);

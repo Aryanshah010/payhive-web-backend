@@ -12,12 +12,12 @@ export const CreateUserDto = UserSchema.pick(
 
 export type CreateUserDto = z.infer<typeof CreateUserDto>;
 
-export const LoginUserDto = UserSchema.pick(
-    {
-        phoneNumber: true,
-        password: true
-    }
-);
+export const LoginUserDto = z.object({
+    phoneNumber: UserSchema.shape.phoneNumber,
+    password: UserSchema.shape.password,
+    deviceId: z.string().min(6).optional(),
+    deviceName: z.string().max(100).optional(),
+});
 
 export type LoginUserDto = z.infer<typeof LoginUserDto>;
 

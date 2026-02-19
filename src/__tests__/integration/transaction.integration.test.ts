@@ -198,6 +198,95 @@ describe("Transaction Integration", () => {
         expect(res.statusCode).toBe(200);
         expect(res.body.success).toBe(true);
         expect(res.body.data.items.length).toBeGreaterThan(0);
+        expect(["DEBIT", "CREDIT"]).toContain(res.body.data.items[0].direction);
+    });
+
+    test("history supports direction and search filters", async () => {
+        const sender = await registerAndLogin("sender-history-filters");
+        const recipient = await registerAndLogin("recipient-history-filters");
+
+        await request(app)
+            .put("/api/profile/pin")
+            .set("Authorization", `Bearer ${sender.token}`)
+            .send({ pin: "1234" })
+            .expect(200);
+
+        await request(app)
+            .put("/api/profile/pin")
+            .set("Authorization", `Bearer ${recipient.token}`)
+            .send({ pin: "1234" })
+            .expect(200);
+
+        await UserModel.findByIdAndUpdate(sender.id, { balance: 1000 });
+        await UserModel.findByIdAndUpdate(recipient.id, { balance: 1000 });
+
+        await request(app)
+            .post("/api/transactions/confirm")
+            .set("Authorization", `Bearer ${sender.token}`)
+            .send({
+                toPhoneNumber: recipient.user.phoneNumber,
+                amount: 100,
+                remark: "rent payment",
+                pin: "1234",
+            })
+            .expect(200);
+
+        await request(app)
+            .post("/api/transactions/confirm")
+            .set("Authorization", `Bearer ${recipient.token}`)
+            .send({
+                toPhoneNumber: sender.user.phoneNumber,
+                amount: 50,
+                remark: "refund",
+                pin: "1234",
+            })
+            .expect(200);
+
+        const debitRes = await request(app)
+            .get("/api/transactions?page=1&limit=10&direction=debit")
+            .set("Authorization", `Bearer ${sender.token}`);
+
+        expect(debitRes.statusCode).toBe(200);
+        expect(debitRes.body.data.items.length).toBeGreaterThan(0);
+        expect(debitRes.body.data.items.every((item: any) => item.direction === "DEBIT")).toBe(true);
+
+        const creditRes = await request(app)
+            .get("/api/transactions?page=1&limit=10&direction=credit")
+            .set("Authorization", `Bearer ${sender.token}`);
+
+        expect(creditRes.statusCode).toBe(200);
+        expect(creditRes.body.data.items.length).toBeGreaterThan(0);
+        expect(creditRes.body.data.items.every((item: any) => item.direction === "CREDIT")).toBe(true);
+
+        const searchRemarkRes = await request(app)
+            .get("/api/transactions?page=1&limit=10&search=rent")
+            .set("Authorization", `Bearer ${sender.token}`);
+
+        expect(searchRemarkRes.statusCode).toBe(200);
+        expect(searchRemarkRes.body.data.items.length).toBeGreaterThan(0);
+        expect(
+            searchRemarkRes.body.data.items.some((item: any) =>
+                (item.remark || "").toLowerCase().includes("rent")
+            )
+        ).toBe(true);
+
+        const searchCounterpartyRes = await request(app)
+            .get(`/api/transactions?page=1&limit=10&search=${recipient.user.phoneNumber.slice(3)}`)
+            .set("Authorization", `Bearer ${sender.token}`);
+
+        expect(searchCounterpartyRes.statusCode).toBe(200);
+        expect(searchCounterpartyRes.body.data.items.length).toBeGreaterThan(0);
+    });
+
+    test("history returns 400 for invalid direction", async () => {
+        const user = await registerAndLogin("sender-history-invalid-direction");
+
+        const res = await request(app)
+            .get("/api/transactions?page=1&limit=10&direction=sideways")
+            .set("Authorization", `Bearer ${user.token}`);
+
+        expect(res.statusCode).toBe(400);
+        expect(res.body.success).toBe(false);
     });
 
     test("get transaction by txId success", async () => {

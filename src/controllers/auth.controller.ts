@@ -40,10 +40,28 @@ export class AuthController {
 
                 )
             }
-            const { token, user } = await userService.loginUser(parsedData.data);
-            return res.status(200).json(
-                { success: true, message: "Login Successful", data: user, token }
-            )
+            const result = await userService.loginUser(parsedData.data, req.headers["user-agent"]);
+
+            if (result.status !== "ALLOWED") {
+                return res.status(403).json({
+                    success: false,
+                    message:
+                        result.status === "BLOCKED"
+                            ? "Device is blocked. Contact support."
+                            : "New device detected. Approval required.",
+                    deviceStatus: result.status,
+                    deviceId: result.deviceId,
+                    approvalRequired: result.approvalRequired || false,
+                });
+            }
+
+            return res.status(200).json({
+                success: true,
+                message: "Login Successful",
+                data: result.user,
+                token: result.token,
+                deviceId: result.deviceId,
+            });
 
         } catch (error: Error | any) {
             return res.status(error.statusCode || 500).json(
