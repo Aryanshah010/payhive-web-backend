@@ -16,6 +16,11 @@ export interface TransactionHistoryListItem {
     amount: number;
     remark?: string;
     paymentType?: string;
+    type?: string | null;
+    bankName?: string | null;
+    maskedAccount?: string | null;
+    fee?: number | null;
+    timestamp?: Date;
     meta?: Record<string, unknown> | null;
     from: TransactionHistoryUserSnapshot;
     to: TransactionHistoryUserSnapshot;
@@ -133,6 +138,11 @@ export class TransactionRepository implements ITransactionRepository {
                     amount: 1,
                     remark: 1,
                     paymentType: 1,
+                    type: "$meta.type",
+                    bankName: "$meta.bankName",
+                    maskedAccount: "$meta.maskedAccount",
+                    fee: "$meta.fee",
+                    timestamp: "$createdAt",
                     meta: 1,
                     createdAt: 1,
                     direction: 1,

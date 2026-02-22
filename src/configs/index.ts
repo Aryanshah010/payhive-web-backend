@@ -8,6 +8,8 @@ export const CLIENT_URL: string = process.env.CLIENT_URL || 'http://localhost:30
 export const EMAIL_USER: string = process.env.EMAIL_USER || '';
 export const EMAIL_PASS: string = process.env.EMAIL_PASS || '';
 export const BOOKING_PAYEE_USER_ID: string = process.env.BOOKING_PAYEE_USER_ID || '';
+export const BANK_CLEARING_ACCOUNT_USER_ID: string = process.env.BANK_CLEARING_ACCOUNT_USER_ID || '';
+export const BANK_TRANSFER_FIXED_FEE = 10;
 
 // Transfer limits
 export const MAX_TRANSFER_AMOUNT: number = process.env.MAX_TRANSFER_AMOUNT

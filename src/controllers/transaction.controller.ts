@@ -56,12 +56,22 @@ export class TransactionController {
                 });
             }
 
-            const data = await transactionService.previewTransfer(
-                userId.toString(),
-                parsedData.data.toPhoneNumber,
-                parsedData.data.amount,
-                parsedData.data.remark
-            );
+            const paymentType = parsedData.data.paymentType;
+            const data =
+                paymentType === "BANK_TRANSFER"
+                    ? await transactionService.previewBankTransfer(
+                          userId.toString(),
+                          parsedData.data.bankName as string,
+                          parsedData.data.accountNumber as string,
+                          parsedData.data.amount,
+                          parsedData.data.remark
+                      )
+                    : await transactionService.previewTransfer(
+                          userId.toString(),
+                          parsedData.data.toPhoneNumber as string,
+                          parsedData.data.amount,
+                          parsedData.data.remark
+                      );
 
             return res.status(200).json({ success: true, message: "Preview OK", data });
         } catch (error: Error | any) {
@@ -88,14 +98,30 @@ export class TransactionController {
                 });
             }
 
-            const data = await transactionService.confirmTransfer(
-                userId.toString(),
-                parsedData.data.toPhoneNumber,
-                parsedData.data.amount,
-                parsedData.data.remark,
-                parsedData.data.pin,
-                (req.header("Idempotency-Key") || parsedData.data.idempotencyKey || undefined) as string | undefined
-            );
+            const paymentType = parsedData.data.paymentType;
+            const idempotencyKey = (req.header("Idempotency-Key") ||
+                parsedData.data.idempotencyKey ||
+                undefined) as string | undefined;
+
+            const data =
+                paymentType === "BANK_TRANSFER"
+                    ? await transactionService.confirmBankTransfer(
+                          userId.toString(),
+                          parsedData.data.bankName as string,
+                          parsedData.data.accountNumber as string,
+                          parsedData.data.amount,
+                          parsedData.data.remark,
+                          parsedData.data.pin,
+                          idempotencyKey
+                      )
+                    : await transactionService.confirmTransfer(
+                          userId.toString(),
+                          parsedData.data.toPhoneNumber as string,
+                          parsedData.data.amount,
+                          parsedData.data.remark,
+                          parsedData.data.pin,
+                          idempotencyKey
+                      );
 
             return res.status(200).json({
                 success: true,
