@@ -6,6 +6,7 @@ import { HotelModel } from "../../models/hotel.model";
 import { UtilityModel } from "../../models/utility.model";
 import { BankModel } from "../../models/bank.model";
 import { BankTransferModel } from "../../models/bank-transfer.model";
+import { FeeConfigModel } from "../../models/fee-config.model";
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -53,6 +54,8 @@ export const cleanupTestData = async (prefix: string) => {
             { packageLabel: regex },
         ],
     });
+
+    await FeeConfigModel.deleteMany({ description: regex });
 
     await UserModel.deleteMany({ email: regex });
 };

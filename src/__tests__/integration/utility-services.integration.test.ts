@@ -28,6 +28,20 @@ const promoteToAdmin = async (userId: string) => {
     await UserModel.findByIdAndUpdate(userId, { role: "admin" });
 };
 
+const createFeeConfig = async (token: string, appliesTo: string[], fixedAmount: number) => {
+    return request(app)
+        .post("/api/admin/fee-configs")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+            type: "service_payment",
+            description: `${prefix} fee ${appliesTo.join("-")}`,
+            calculation: { mode: "fixed", fixedAmount },
+            appliesTo,
+            isActive: true,
+        })
+        .expect(201);
+};
+
 const makeInternetPayload = (tag: string, overrides: Record<string, unknown> = {}) => ({
     provider: `${prefix}ISP-${tag}`,
     name: `${prefix}Internet-${tag}`,
@@ -153,58 +167,74 @@ describe("Utility Services Integration", () => {
     });
 
     test("internet payment success + idempotency replay + history meta", async () => {
-        const admin = await registerAndLogin("admin-int-pay");
-        await promoteToAdmin(admin.id);
+        const originalRevenueUserId = (configs as any).PLATFORM_REVENUE_USER_ID;
+        try {
+            const admin = await registerAndLogin("admin-int-pay");
+            await promoteToAdmin(admin.id);
 
-        const user = await registerAndLogin("user-int-pay");
-        await UserModel.findByIdAndUpdate(user.id, { balance: 5000 });
+            const revenue = await registerAndLogin("revenue-int-pay");
+            await promoteToAdmin(revenue.id);
+            (configs as any).PLATFORM_REVENUE_USER_ID = revenue.id;
 
-        const createInternetRes = await request(app)
-            .post("/api/admin/internet-services")
-            .set("Authorization", `Bearer ${admin.token}`)
-            .send(makeInternetPayload("pay", { amount: 1200 }))
-            .expect(201);
+            const user = await registerAndLogin("user-int-pay");
+            await UserModel.findByIdAndUpdate(user.id, { balance: 5000 });
 
-        const serviceId = createInternetRes.body.data._id;
+            await createFeeConfig(admin.token, ["internet"], 5);
 
-        const firstPayRes = await request(app)
-            .post(`/api/internet-services/${serviceId}/pay`)
-            .set("Authorization", `Bearer ${user.token}`)
-            .set("Idempotency-Key", "int-pay-1")
-            .send({ customerId: "ABCD1234" });
+            const createInternetRes = await request(app)
+                .post("/api/admin/internet-services")
+                .set("Authorization", `Bearer ${admin.token}`)
+                .send(makeInternetPayload("pay", { amount: 1200 }))
+                .expect(201);
 
-        expect(firstPayRes.statusCode).toBe(200);
-        expect(firstPayRes.body.data.receipt.serviceType).toBe("internet");
+            const serviceId = createInternetRes.body.data._id;
 
-        const secondPayRes = await request(app)
-            .post(`/api/internet-services/${serviceId}/pay`)
-            .set("Authorization", `Bearer ${user.token}`)
-            .set("Idempotency-Key", "int-pay-1")
-            .send({ customerId: "ABCD1234" });
+            const firstPayRes = await request(app)
+                .post(`/api/internet-services/${serviceId}/pay`)
+                .set("Authorization", `Bearer ${user.token}`)
+                .set("Idempotency-Key", "int-pay-1")
+                .send({ customerId: "ABCD1234" });
 
-        expect(secondPayRes.statusCode).toBe(200);
-        expect(secondPayRes.body.data.idempotentReplay).toBe(true);
-        expect(secondPayRes.body.data.transactionId).toBe(firstPayRes.body.data.transactionId);
+            expect(firstPayRes.statusCode).toBe(200);
+            expect(firstPayRes.body.data.receipt.serviceType).toBe("internet");
+            expect(firstPayRes.body.data.receipt.fee).toBe(5);
+            expect(firstPayRes.body.data.receipt.totalDebited).toBe(1205);
 
-        const userAfter = await UserModel.findById(user.id);
-        expect(userAfter?.balance).toBe(3800);
+            const secondPayRes = await request(app)
+                .post(`/api/internet-services/${serviceId}/pay`)
+                .set("Authorization", `Bearer ${user.token}`)
+                .set("Idempotency-Key", "int-pay-1")
+                .send({ customerId: "ABCD1234" });
 
-        const historyRes = await request(app)
-            .get("/api/transactions?page=1&limit=20")
-            .set("Authorization", `Bearer ${user.token}`);
+            expect(secondPayRes.statusCode).toBe(200);
+            expect(secondPayRes.body.data.idempotentReplay).toBe(true);
+            expect(secondPayRes.body.data.transactionId).toBe(firstPayRes.body.data.transactionId);
 
-        expect(historyRes.statusCode).toBe(200);
-        const utilityItem = historyRes.body.data.items.find((item: any) => item.paymentType === "UTILITY_PAYMENT");
-        expect(utilityItem).toBeTruthy();
-        expect(utilityItem.meta.serviceType).toBe("internet");
+            const userAfter = await UserModel.findById(user.id);
+            expect(userAfter?.balance).toBe(3795);
 
-        const txDetailRes = await request(app)
-            .get(`/api/transactions/${firstPayRes.body.data.receipt.receiptNo}`)
-            .set("Authorization", `Bearer ${user.token}`);
+            const historyRes = await request(app)
+                .get("/api/transactions?page=1&limit=20")
+                .set("Authorization", `Bearer ${user.token}`);
 
-        expect(txDetailRes.statusCode).toBe(200);
-        expect(txDetailRes.body.data.paymentType).toBe("UTILITY_PAYMENT");
-        expect(txDetailRes.body.data.meta.serviceType).toBe("internet");
+            expect(historyRes.statusCode).toBe(200);
+            const utilityItem = historyRes.body.data.items.find((item: any) => item.paymentType === "UTILITY_PAYMENT");
+            expect(utilityItem).toBeTruthy();
+            expect(utilityItem.meta.serviceType).toBe("internet");
+            expect(utilityItem.meta.fee).toBe(5);
+            expect(utilityItem.meta.totalDebited).toBe(1205);
+
+            const txDetailRes = await request(app)
+                .get(`/api/transactions/${firstPayRes.body.data.receipt.receiptNo}`)
+                .set("Authorization", `Bearer ${user.token}`);
+
+            expect(txDetailRes.statusCode).toBe(200);
+            expect(txDetailRes.body.data.paymentType).toBe("UTILITY_PAYMENT");
+            expect(txDetailRes.body.data.meta.serviceType).toBe("internet");
+            expect(txDetailRes.body.data.meta.fee).toBe(5);
+        } finally {
+            (configs as any).PLATFORM_REVENUE_USER_ID = originalRevenueUserId;
+        }
     });
 
     test("utility payment fails when payee wallet resolves to payer wallet", async () => {
@@ -249,47 +279,62 @@ describe("Utility Services Integration", () => {
     });
 
     test("topup payment success + validation failure + insufficient funds", async () => {
-        const admin = await registerAndLogin("admin-topup-pay");
-        await promoteToAdmin(admin.id);
+        const originalRevenueUserId = (configs as any).PLATFORM_REVENUE_USER_ID;
+        try {
+            const admin = await registerAndLogin("admin-topup-pay");
+            await promoteToAdmin(admin.id);
 
-        const user = await registerAndLogin("user-topup-pay");
-        await UserModel.findByIdAndUpdate(user.id, { balance: 300 });
+            const revenue = await registerAndLogin("revenue-topup-pay");
+            await promoteToAdmin(revenue.id);
+            (configs as any).PLATFORM_REVENUE_USER_ID = revenue.id;
 
-        const createTopupRes = await request(app)
-            .post("/api/admin/topup-services")
-            .set("Authorization", `Bearer ${admin.token}`)
-            .send(makeTopupPayload("pay", { amount: 350 }))
-            .expect(201);
+            const user = await registerAndLogin("user-topup-pay");
+            await UserModel.findByIdAndUpdate(user.id, { balance: 350 });
 
-        const serviceId = createTopupRes.body.data._id;
+            await createFeeConfig(admin.token, ["topup"], 5);
 
-        const invalidRes = await request(app)
-            .post(`/api/topup-services/${serviceId}/pay`)
-            .set("Authorization", `Bearer ${user.token}`)
-            .send({ phoneNumber: "123" });
+            const createTopupRes = await request(app)
+                .post("/api/admin/topup-services")
+                .set("Authorization", `Bearer ${admin.token}`)
+                .send(makeTopupPayload("pay", { amount: 350 }))
+                .expect(201);
 
-        expect(invalidRes.statusCode).toBe(400);
+            const serviceId = createTopupRes.body.data._id;
 
-        const insufficientRes = await request(app)
-            .post(`/api/topup-services/${serviceId}/pay`)
-            .set("Authorization", `Bearer ${user.token}`)
-            .send({ phoneNumber: "9876543210" });
+            const invalidRes = await request(app)
+                .post(`/api/topup-services/${serviceId}/pay`)
+                .set("Authorization", `Bearer ${user.token}`)
+                .send({ phoneNumber: "123" });
 
-        expect(insufficientRes.statusCode).toBe(402);
-        expect(insufficientRes.body.code).toBe("INSUFFICIENT_FUNDS");
+            expect(invalidRes.statusCode).toBe(400);
 
-        await UserModel.findByIdAndUpdate(user.id, { balance: 1000 });
+            const insufficientRes = await request(app)
+                .post(`/api/topup-services/${serviceId}/pay`)
+                .set("Authorization", `Bearer ${user.token}`)
+                .send({ phoneNumber: "9876543210" });
 
-        const successRes = await request(app)
-            .post(`/api/topup-services/${serviceId}/pay`)
-            .set("Authorization", `Bearer ${user.token}`)
-            .send({ phoneNumber: "9876543210" });
+            expect(insufficientRes.statusCode).toBe(402);
+            expect(insufficientRes.body.code).toBe("INSUFFICIENT_FUNDS");
 
-        expect(successRes.statusCode).toBe(200);
-        expect(successRes.body.data.receipt.serviceType).toBe("topup");
-        expect(successRes.body.data.receipt.phoneMasked).toBeDefined();
+            await UserModel.findByIdAndUpdate(user.id, { balance: 1000 });
 
-        const tx = await TransactionModel.findById(successRes.body.data.transactionId);
-        expect(tx?.paymentType).toBe("UTILITY_PAYMENT");
+            const successRes = await request(app)
+                .post(`/api/topup-services/${serviceId}/pay`)
+                .set("Authorization", `Bearer ${user.token}`)
+                .send({ phoneNumber: "9876543210" });
+
+            expect(successRes.statusCode).toBe(200);
+            expect(successRes.body.data.receipt.serviceType).toBe("topup");
+            expect(successRes.body.data.receipt.phoneMasked).toBeDefined();
+            expect(successRes.body.data.receipt.fee).toBe(5);
+            expect(successRes.body.data.receipt.totalDebited).toBe(355);
+
+            const tx = await TransactionModel.findById(successRes.body.data.transactionId);
+            expect(tx?.paymentType).toBe("UTILITY_PAYMENT");
+            expect(tx?.amount).toBe(355);
+            expect(tx?.meta?.fee).toBe(5);
+        } finally {
+            (configs as any).PLATFORM_REVENUE_USER_ID = originalRevenueUserId;
+        }
     });
 });

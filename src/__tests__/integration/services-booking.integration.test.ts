@@ -28,6 +28,20 @@ const promoteToAdmin = async (userId: string) => {
     await UserModel.findByIdAndUpdate(userId, { role: "admin" });
 };
 
+const createFeeConfig = async (token: string, appliesTo: string[], fixedAmount: number) => {
+    return request(app)
+        .post("/api/admin/fee-configs")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+            type: "service_payment",
+            description: `${prefix} fee ${appliesTo.join("-")}`,
+            calculation: { mode: "fixed", fixedAmount },
+            appliesTo,
+            isActive: true,
+        })
+        .expect(201);
+};
+
 const makeFutureIso = (daysAhead: number, hour: number) => {
     const date = new Date();
     date.setUTCDate(date.getUTCDate() + daysAhead);
@@ -287,48 +301,66 @@ describe("Services + Booking Integration", () => {
     });
 
     test("pay booking success creates transaction and updates wallet atomically", async () => {
-        const admin = await registerAndLogin("admin-pay-success");
-        await promoteToAdmin(admin.id);
+        const originalRevenueUserId = (configs as any).PLATFORM_REVENUE_USER_ID;
+        try {
+            const admin = await registerAndLogin("admin-pay-success");
+            await promoteToAdmin(admin.id);
 
-        const user = await registerAndLogin("user-pay-success");
-        await UserModel.findByIdAndUpdate(user.id, { balance: 10000 });
+            const revenue = await registerAndLogin("revenue-pay-success");
+            await promoteToAdmin(revenue.id);
+            (configs as any).PLATFORM_REVENUE_USER_ID = revenue.id;
 
-        const createFlightRes = await request(app)
-            .post("/api/admin/flights")
-            .set("Authorization", `Bearer ${admin.token}`)
-            .send(buildFlightPayload("pay-success", { price: 2500, seatsTotal: 5, seatsAvailable: 5 }))
-            .expect(201);
+            const user = await registerAndLogin("user-pay-success");
+            await UserModel.findByIdAndUpdate(user.id, { balance: 10000 });
 
-        const bookingRes = await request(app)
-            .post("/api/bookings")
-            .set("Authorization", `Bearer ${user.token}`)
-            .send({ type: "flight", itemId: createFlightRes.body.data._id, quantity: 2 })
-            .expect(201);
+            await createFeeConfig(admin.token, ["flight"], 20);
 
-        const bookingId = bookingRes.body.data.bookingId;
-        const adminUsersBefore = await UserModel.find({ role: "admin" }).select("_id balance");
+            const createFlightRes = await request(app)
+                .post("/api/admin/flights")
+                .set("Authorization", `Bearer ${admin.token}`)
+                .send(buildFlightPayload("pay-success", { price: 2500, seatsTotal: 5, seatsAvailable: 5 }))
+                .expect(201);
 
-        const payRes = await request(app)
-            .post(`/api/bookings/${bookingId}/pay`)
-            .set("Authorization", `Bearer ${user.token}`)
-            .set("Idempotency-Key", "pay-success-key");
+            const bookingRes = await request(app)
+                .post("/api/bookings")
+                .set("Authorization", `Bearer ${user.token}`)
+                .send({ type: "flight", itemId: createFlightRes.body.data._id, quantity: 2 })
+                .expect(201);
 
-        expect(payRes.statusCode).toBe(200);
-        expect(payRes.body.data.booking.status).toBe("paid");
+            const bookingId = bookingRes.body.data.bookingId;
+            const payeeBefore = await UserModel.findById(admin.id);
+            const revenueBefore = await UserModel.findById(revenue.id);
 
-        const userAfter = await UserModel.findById(user.id);
-        expect(userAfter?.balance).toBe(5000);
+            const payRes = await request(app)
+                .post(`/api/bookings/${bookingId}/pay`)
+                .set("Authorization", `Bearer ${user.token}`)
+                .set("Idempotency-Key", "pay-success-key");
 
-        const bookingDoc = await BookingModel.findById(bookingId);
-        expect(bookingDoc?.status).toBe("paid");
+            expect(payRes.statusCode).toBe(200);
+            expect(payRes.body.data.booking.status).toBe("paid");
 
-        const txDoc = await TransactionModel.findById(payRes.body.data.transactionId);
-        expect(txDoc?.paymentType).toBe("BOOKING_PAYMENT");
-        expect(txDoc?.bookingId?.toString()).toBe(bookingId);
+            const userAfter = await UserModel.findById(user.id);
+            expect(userAfter?.balance).toBe(4980);
 
-        const payeeBefore = adminUsersBefore.find((item) => item._id.toString() === txDoc?.to.toString());
-        const payeeAfter = await UserModel.findById(txDoc?.to);
-        expect(payeeAfter?.balance).toBe((payeeBefore?.balance || 0) + 5000);
+            const bookingDoc = await BookingModel.findById(bookingId);
+            expect(bookingDoc?.status).toBe("paid");
+
+            const txDoc = await TransactionModel.findById(payRes.body.data.transactionId);
+            expect(txDoc?.paymentType).toBe("BOOKING_PAYMENT");
+            expect(txDoc?.bookingId?.toString()).toBe(bookingId);
+            expect(txDoc?.amount).toBe(5020);
+            expect(txDoc?.meta?.fee).toBe(20);
+            expect(txDoc?.meta?.amount).toBe(5000);
+            expect(txDoc?.meta?.totalDebited).toBe(5020);
+            expect(txDoc?.meta?.serviceType).toBe("flight");
+
+            const payeeAfter = await UserModel.findById(txDoc?.to);
+            expect(payeeAfter?.balance).toBe((payeeBefore?.balance || 0) + 5000);
+            const revenueAfter = await UserModel.findById(revenue.id);
+            expect(revenueAfter?.balance).toBe((revenueBefore?.balance || 0) + 20);
+        } finally {
+            (configs as any).PLATFORM_REVENUE_USER_ID = originalRevenueUserId;
+        }
     });
 
     test("pay booking fails when payee wallet resolves to payer wallet", async () => {
@@ -381,50 +413,61 @@ describe("Services + Booking Integration", () => {
     });
 
     test("insufficient balance prevents payment and idempotency avoids double charge", async () => {
-        const admin = await registerAndLogin("admin-pay-fail");
-        await promoteToAdmin(admin.id);
+        const originalRevenueUserId = (configs as any).PLATFORM_REVENUE_USER_ID;
+        try {
+            const admin = await registerAndLogin("admin-pay-fail");
+            await promoteToAdmin(admin.id);
 
-        const user = await registerAndLogin("user-pay-fail");
-        await UserModel.findByIdAndUpdate(user.id, { balance: 1500 });
+            const revenue = await registerAndLogin("revenue-pay-fail");
+            await promoteToAdmin(revenue.id);
+            (configs as any).PLATFORM_REVENUE_USER_ID = revenue.id;
 
-        const createFlightRes = await request(app)
-            .post("/api/admin/flights")
-            .set("Authorization", `Bearer ${admin.token}`)
-            .send(buildFlightPayload("pay-fail", { price: 2000 }))
-            .expect(201);
+            const user = await registerAndLogin("user-pay-fail");
+            await UserModel.findByIdAndUpdate(user.id, { balance: 2000 });
 
-        const createBookingRes = await request(app)
-            .post("/api/bookings")
-            .set("Authorization", `Bearer ${user.token}`)
-            .send({ type: "flight", itemId: createFlightRes.body.data._id, quantity: 1 })
-            .expect(201);
+            await createFeeConfig(admin.token, ["flight"], 20);
 
-        const bookingId = createBookingRes.body.data.bookingId;
+            const createFlightRes = await request(app)
+                .post("/api/admin/flights")
+                .set("Authorization", `Bearer ${admin.token}`)
+                .send(buildFlightPayload("pay-fail", { price: 2000 }))
+                .expect(201);
 
-        const insufficientRes = await request(app)
-            .post(`/api/bookings/${bookingId}/pay`)
-            .set("Authorization", `Bearer ${user.token}`);
+            const createBookingRes = await request(app)
+                .post("/api/bookings")
+                .set("Authorization", `Bearer ${user.token}`)
+                .send({ type: "flight", itemId: createFlightRes.body.data._id, quantity: 1 })
+                .expect(201);
 
-        expect(insufficientRes.statusCode).toBe(402);
-        expect(insufficientRes.body.code).toBe("INSUFFICIENT_FUNDS");
+            const bookingId = createBookingRes.body.data.bookingId;
 
-        await UserModel.findByIdAndUpdate(user.id, { balance: 5000 });
+            const insufficientRes = await request(app)
+                .post(`/api/bookings/${bookingId}/pay`)
+                .set("Authorization", `Bearer ${user.token}`);
 
-        const firstPayRes = await request(app)
-            .post(`/api/bookings/${bookingId}/pay`)
-            .set("Authorization", `Bearer ${user.token}`)
-            .set("Idempotency-Key", "same-key");
-        expect(firstPayRes.statusCode).toBe(200);
+            expect(insufficientRes.statusCode).toBe(402);
+            expect(insufficientRes.body.code).toBe("INSUFFICIENT_FUNDS");
 
-        const secondPayRes = await request(app)
-            .post(`/api/bookings/${bookingId}/pay`)
-            .set("Authorization", `Bearer ${user.token}`)
-            .set("Idempotency-Key", "same-key");
-        expect(secondPayRes.statusCode).toBe(200);
-        expect(secondPayRes.body.data.idempotentReplay).toBe(true);
+            await UserModel.findByIdAndUpdate(user.id, { balance: 5000 });
 
-        const userAfter = await UserModel.findById(user.id);
-        expect(userAfter?.balance).toBe(3000);
+            const firstPayRes = await request(app)
+                .post(`/api/bookings/${bookingId}/pay`)
+                .set("Authorization", `Bearer ${user.token}`)
+                .set("Idempotency-Key", "same-key");
+            expect(firstPayRes.statusCode).toBe(200);
+
+            const secondPayRes = await request(app)
+                .post(`/api/bookings/${bookingId}/pay`)
+                .set("Authorization", `Bearer ${user.token}`)
+                .set("Idempotency-Key", "same-key");
+            expect(secondPayRes.statusCode).toBe(200);
+            expect(secondPayRes.body.data.idempotentReplay).toBe(true);
+
+            const userAfter = await UserModel.findById(user.id);
+            expect(userAfter?.balance).toBe(2980);
+        } finally {
+            (configs as any).PLATFORM_REVENUE_USER_ID = originalRevenueUserId;
+        }
     });
 
     test("end-to-end flow search -> create booking -> pay -> booking list shows paid", async () => {

@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 import { v4 as uuidv4 } from "uuid";
-import { BOOKING_PAYEE_USER_ID } from "../configs";
+import { BOOKING_PAYEE_USER_ID, PLATFORM_REVENUE_USER_ID } from "../configs";
 import { HttpError } from "../errors/http-error";
 import { ITransaction } from "../models/transaction.model";
 import { IUser } from "../models/user.model";
@@ -8,10 +8,12 @@ import { UtilityType } from "../models/utility.model";
 import { TransactionRepository } from "../repositories/transaction.repository";
 import { UserRepository } from "../repositories/user.repository";
 import { UtilityRepository } from "../repositories/utility.repository";
+import { FeeService } from "./fee.service";
 
 let utilityRepository = new UtilityRepository();
 let userRepository = new UserRepository();
 let transactionRepository = new TransactionRepository();
+let feeService = new FeeService();
 
 const normalizeAmount = (amount: number) => Math.round(amount * 100) / 100;
 
@@ -99,6 +101,8 @@ export class UtilityPaymentService {
         this.validateCustomerRef(type, customerRef, service.validationRegex || "");
 
         const amount = normalizeAmount(service.amount);
+        const fee = await feeService.getFixedFee("service_payment", type === "topup" ? "topup" : type);
+        const totalDebited = normalizeAmount(amount + fee);
         const idempotencyKey = rawIdempotencyKey?.trim();
         const namespacedKey = idempotencyKey ? buildKey(type, serviceId, customerRef, idempotencyKey) : undefined;
 
@@ -126,14 +130,18 @@ export class UtilityPaymentService {
         }
 
         const payee = await this.resolvePayee(userId);
+        const revenueWallet = fee > 0 ? await this.resolveRevenueWallet(userId) : null;
         try {
             return await this.payWithTransaction({
                 userId,
                 payeeId: payee._id.toString(),
+                revenueWalletId: revenueWallet?._id.toString(),
                 serviceId,
                 type,
                 customerRef,
                 amount,
+                fee,
+                totalDebited,
                 provider: service.provider,
                 planName: service.name,
                 packageLabel: service.packageLabel || "",
@@ -146,10 +154,13 @@ export class UtilityPaymentService {
             return this.payWithFallback({
                 userId,
                 payeeId: payee._id.toString(),
+                revenueWalletId: revenueWallet?._id.toString(),
                 serviceId,
                 type,
                 customerRef,
                 amount,
+                fee,
+                totalDebited,
                 provider: service.provider,
                 planName: service.name,
                 packageLabel: service.packageLabel || "",
@@ -205,6 +216,36 @@ export class UtilityPaymentService {
         return payee;
     }
 
+    private async resolveRevenueWallet(userId: string) {
+        let revenueWallet: IUser | null = null;
+        if (PLATFORM_REVENUE_USER_ID) {
+            const configuredRevenue = await userRepository.getUserById(PLATFORM_REVENUE_USER_ID);
+            if (configuredRevenue) {
+                revenueWallet = configuredRevenue;
+            }
+        }
+
+        if (!revenueWallet) {
+            revenueWallet = await userRepository.getFirstAdminUser();
+        }
+
+        if (!revenueWallet) {
+            throw new HttpError(500, "Platform revenue wallet not configured", {
+                code: "REVENUE_NOT_CONFIGURED",
+            });
+        }
+
+        if (revenueWallet._id.toString() === userId) {
+            throw new HttpError(
+                500,
+                "Platform revenue wallet cannot be the same as payer wallet. Configure PLATFORM_REVENUE_USER_ID to a different user.",
+                { code: "REVENUE_MISCONFIGURED" }
+            );
+        }
+
+        return revenueWallet;
+    }
+
     private buildReceipt({
         type,
         serviceId,
@@ -213,6 +254,8 @@ export class UtilityPaymentService {
         packageLabel,
         customerRef,
         amount,
+        fee,
+        totalDebited,
         txId,
         createdAt,
     }: {
@@ -223,6 +266,8 @@ export class UtilityPaymentService {
         packageLabel: string;
         customerRef: string;
         amount: number;
+        fee: number;
+        totalDebited: number;
         txId: string;
         createdAt: Date;
     }) {
@@ -235,6 +280,8 @@ export class UtilityPaymentService {
                 planName,
                 customerIdMasked: maskValue(customerRef),
                 amount,
+                fee,
+                totalDebited,
                 createdAt,
             };
         }
@@ -247,6 +294,8 @@ export class UtilityPaymentService {
             packageLabel,
             phoneMasked: maskValue(customerRef),
             amount,
+            fee,
+            totalDebited,
             createdAt,
         };
     }
@@ -254,10 +303,13 @@ export class UtilityPaymentService {
     private async payWithTransaction({
         userId,
         payeeId,
+        revenueWalletId,
         serviceId,
         type,
         customerRef,
         amount,
+        fee,
+        totalDebited,
         provider,
         planName,
         packageLabel,
@@ -265,10 +317,13 @@ export class UtilityPaymentService {
     }: {
         userId: string;
         payeeId: string;
+        revenueWalletId?: string;
         serviceId: string;
         type: UtilityType;
         customerRef: string;
         amount: number;
+        fee: number;
+        totalDebited: number;
         provider: string;
         planName: string;
         packageLabel: string;
@@ -281,7 +336,7 @@ export class UtilityPaymentService {
 
         try {
             await session.withTransaction(async () => {
-                const debited = await userRepository.debitUser(userId, amount, session);
+                const debited = await userRepository.debitUser(userId, totalDebited, session);
                 if (!debited) {
                     throw new HttpError(402, "Top up your wallet", { code: "INSUFFICIENT_FUNDS" });
                 }
@@ -289,6 +344,13 @@ export class UtilityPaymentService {
                 const credited = await userRepository.creditUser(payeeId, amount, session);
                 if (!credited) {
                     throw new HttpError(500, "Failed to credit payee wallet");
+                }
+
+                if (fee > 0 && revenueWalletId) {
+                    const revenueCredited = await userRepository.creditUser(revenueWalletId, fee, session);
+                    if (!revenueCredited) {
+                        throw new HttpError(500, "Failed to credit revenue wallet");
+                    }
                 }
 
                 const txId = uuidv4();
@@ -300,6 +362,8 @@ export class UtilityPaymentService {
                     packageLabel,
                     customerRef,
                     amount,
+                    fee,
+                    totalDebited,
                     txId,
                     createdAt: new Date(),
                 });
@@ -308,7 +372,7 @@ export class UtilityPaymentService {
                     {
                         from: new mongoose.Types.ObjectId(userId),
                         to: new mongoose.Types.ObjectId(payeeId),
-                        amount,
+                        amount: totalDebited,
                         remark: `${type} payment`,
                         status: "SUCCESS",
                         txId,
@@ -320,6 +384,9 @@ export class UtilityPaymentService {
                             provider,
                             planName,
                             packageLabel,
+                            amount,
+                            fee,
+                            totalDebited,
                             receipt,
                         },
                         ...(idempotencyKey ? { idempotencyKey } : {}),
@@ -346,10 +413,13 @@ export class UtilityPaymentService {
     private async payWithFallback({
         userId,
         payeeId,
+        revenueWalletId,
         serviceId,
         type,
         customerRef,
         amount,
+        fee,
+        totalDebited,
         provider,
         planName,
         packageLabel,
@@ -357,10 +427,13 @@ export class UtilityPaymentService {
     }: {
         userId: string;
         payeeId: string;
+        revenueWalletId?: string;
         serviceId: string;
         type: UtilityType;
         customerRef: string;
         amount: number;
+        fee: number;
+        totalDebited: number;
         provider: string;
         planName: string;
         packageLabel: string;
@@ -368,11 +441,12 @@ export class UtilityPaymentService {
     }): Promise<UtilityPaymentResult> {
         let payerDebited = false;
         let payeeCredited = false;
+        let revenueCredited = false;
         let paymentTx: ITransaction | null = null;
         let receipt: Record<string, unknown> | null = null;
 
         try {
-            const debited = await userRepository.debitUser(userId, amount);
+            const debited = await userRepository.debitUser(userId, totalDebited);
             if (!debited) {
                 throw new HttpError(402, "Top up your wallet", { code: "INSUFFICIENT_FUNDS" });
             }
@@ -384,6 +458,14 @@ export class UtilityPaymentService {
             }
             payeeCredited = true;
 
+            if (fee > 0 && revenueWalletId) {
+                const revenueCredit = await userRepository.creditUser(revenueWalletId, fee);
+                if (!revenueCredit) {
+                    throw new HttpError(500, "Failed to credit revenue wallet");
+                }
+                revenueCredited = true;
+            }
+
             const txId = uuidv4();
             receipt = this.buildReceipt({
                 type,
@@ -393,6 +475,8 @@ export class UtilityPaymentService {
                 packageLabel,
                 customerRef,
                 amount,
+                fee,
+                totalDebited,
                 txId,
                 createdAt: new Date(),
             });
@@ -400,7 +484,7 @@ export class UtilityPaymentService {
             paymentTx = await transactionRepository.createTransaction({
                 from: new mongoose.Types.ObjectId(userId),
                 to: new mongoose.Types.ObjectId(payeeId),
-                amount,
+                amount: totalDebited,
                 remark: `${type} payment`,
                 status: "SUCCESS",
                 txId,
@@ -412,6 +496,9 @@ export class UtilityPaymentService {
                     provider,
                     planName,
                     packageLabel,
+                    amount,
+                    fee,
+                    totalDebited,
                     receipt,
                 },
                 ...(idempotencyKey ? { idempotencyKey } : {}),
@@ -426,9 +513,14 @@ export class UtilityPaymentService {
             await this.compensateFallback({
                 userId,
                 payeeId,
+                revenueWalletId,
                 amount,
+                fee,
+                totalDebited,
+                serviceType: type,
                 payerDebited,
                 payeeCredited,
+                revenueCredited,
             });
             throw error;
         }
@@ -437,15 +529,25 @@ export class UtilityPaymentService {
     private async compensateFallback({
         userId,
         payeeId,
+        revenueWalletId,
         amount,
+        fee,
+        totalDebited,
+        serviceType,
         payerDebited,
         payeeCredited,
+        revenueCredited,
     }: {
         userId: string;
         payeeId: string;
+        revenueWalletId?: string;
         amount: number;
+        fee: number;
+        totalDebited: number;
+        serviceType: UtilityType;
         payerDebited: boolean;
         payeeCredited: boolean;
+        revenueCredited: boolean;
     }) {
         if (payeeCredited) {
             const reversedPayee = await userRepository.debitUser(payeeId, amount);
@@ -454,8 +556,15 @@ export class UtilityPaymentService {
             }
         }
 
+        if (revenueCredited && revenueWalletId) {
+            const reversedRevenue = await userRepository.debitUser(revenueWalletId, fee);
+            if (!reversedRevenue) {
+                return;
+            }
+        }
+
         if (payerDebited) {
-            const refundedUser = await userRepository.creditUser(userId, amount);
+            const refundedUser = await userRepository.creditUser(userId, totalDebited);
             if (!refundedUser) {
                 return;
             }
@@ -465,11 +574,17 @@ export class UtilityPaymentService {
             await transactionRepository.createTransaction({
                 from: new mongoose.Types.ObjectId(payeeId),
                 to: new mongoose.Types.ObjectId(userId),
-                amount,
+                amount: totalDebited,
                 remark: "Utility fallback compensation refund",
                 status: "SUCCESS",
                 txId: uuidv4(),
                 paymentType: "UTILITY_REFUND_COMP",
+                meta: {
+                    serviceType,
+                    amount,
+                    fee,
+                    totalDebited,
+                },
             });
         }
     }
