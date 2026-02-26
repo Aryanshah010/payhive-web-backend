@@ -4,8 +4,10 @@ import { DeviceStatus, IDevice } from "../models/device.model";
 import { IUser } from "../models/user.model";
 import { HttpError } from "../errors/http-error";
 import { sendEmail } from "../configs/email";
+import { NotificationService } from "./notification.service";
 
 let deviceRepository = new DeviceRepository();
+let notificationService = new NotificationService();
 
 export interface DeviceLoginResult {
     status: DeviceStatus;
@@ -14,6 +16,36 @@ export interface DeviceLoginResult {
 }
 
 export class DeviceService {
+    private async notifyNewDeviceLogin(
+        userId: string,
+        deviceId: string,
+        deviceName: string,
+        userAgent: string,
+        status: DeviceStatus
+    ) {
+        try {
+            const body =
+                status === "ALLOWED"
+                    ? `New device login on ${deviceName}`
+                    : `New device login attempt on ${deviceName} requires approval`;
+
+            await notificationService.createNotification({
+                userId,
+                title: "Device Login Alert",
+                body,
+                type: "DEVICE_LOGIN",
+                data: {
+                    deviceId,
+                    deviceName,
+                    userAgent,
+                    status,
+                },
+            });
+        } catch (error) {
+            console.error("Failed to create device login notification:", error);
+        }
+    }
+
     private createDeviceId() {
         return uuidv4();
     }
@@ -134,6 +166,14 @@ export class DeviceService {
                 allowedAt: now,
             });
 
+            await this.notifyNewDeviceLogin(
+                user._id.toString(),
+                newDeviceId,
+                normalizedDeviceName,
+                normalizedUserAgent,
+                "ALLOWED"
+            );
+
             return { status: "ALLOWED", deviceId: newDeviceId };
         }
 
@@ -146,6 +186,14 @@ export class DeviceService {
             status: "PENDING",
             lastSeenAt: now,
         });
+
+        await this.notifyNewDeviceLogin(
+            user._id.toString(),
+            pendingDeviceId,
+            normalizedDeviceName,
+            normalizedUserAgent,
+            "PENDING"
+        );
 
         try {
             const html = `
@@ -164,6 +212,17 @@ export class DeviceService {
 
     async listDevices(userId: string, status?: DeviceStatus): Promise<IDevice[]> {
         return deviceRepository.listByUser(userId, status);
+    }
+
+    async updateFcmToken(userId: string, deviceId: string, token: string | null): Promise<IDevice> {
+        const normalizedToken = typeof token === "string" ? token.trim() : null;
+        const updated = await deviceRepository.updateFcmToken(userId, deviceId, normalizedToken || null);
+
+        if (!updated) {
+            throw new HttpError(404, "Device not found");
+        }
+
+        return updated;
     }
 
     async allowDevice(userId: string, deviceId: string): Promise<IDevice> {

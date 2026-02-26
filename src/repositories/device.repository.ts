@@ -5,7 +5,9 @@ export interface IDeviceRepository {
     getByUserAndDeviceId(userId: string, deviceId: string): Promise<IDevice | null>;
     getLatestByFingerprint(userId: string, deviceName: string, userAgent: string): Promise<IDevice | null>;
     listByUser(userId: string, status?: DeviceStatus): Promise<IDevice[]>;
+    listFcmTokensByUser(userId: string): Promise<string[]>;
     countByUser(userId: string): Promise<number>;
+    updateFcmToken(userId: string, deviceId: string, token: string | null): Promise<IDevice | null>;
     updateById(id: string, data: Partial<IDevice>): Promise<IDevice | null>;
     updateStatus(userId: string, deviceId: string, status: DeviceStatus, data?: Partial<IDevice>): Promise<IDevice | null>;
 }
@@ -37,8 +39,33 @@ export class DeviceRepository implements IDeviceRepository {
         return DeviceModel.find(query).sort({ createdAt: -1 });
     }
 
+    async listFcmTokensByUser(userId: string): Promise<string[]> {
+        const devices = await DeviceModel.find({
+            userId,
+            status: "ALLOWED",
+            fcmToken: { $exists: true, $nin: [null, ""] },
+        })
+            .select({ fcmToken: 1, _id: 0 })
+            .lean();
+
+        return devices
+            .map((device) => device.fcmToken)
+            .filter((token): token is string => typeof token === "string" && token.length > 0);
+    }
+
     async countByUser(userId: string): Promise<number> {
         return DeviceModel.countDocuments({ userId });
+    }
+
+    async updateFcmToken(userId: string, deviceId: string, token: string | null): Promise<IDevice | null> {
+        return DeviceModel.findOneAndUpdate(
+            { userId, deviceId },
+            {
+                fcmToken: token,
+                fcmUpdatedAt: new Date(),
+            },
+            { new: true }
+        );
     }
 
     async updateById(id: string, data: Partial<IDevice>): Promise<IDevice | null> {

@@ -23,6 +23,7 @@ import internetServiceRoutes from "./routes/internet-service.route";
 import topupServiceRoutes from "./routes/topup-service.route";
 import bankRoutes from "./routes/bank.route";
 import bankTransferRoutes from "./routes/bank-transfer.route";
+import notificationRoutes from "./routes/notification.route";
 
 dotenv.config();
 console.log(process.env.PORT);
@@ -79,6 +80,7 @@ app.use('/api/topup-services', topupServiceRoutes);
 app.use('/api/banks', bankRoutes);
 app.use('/api/bank-transfers', bankTransferRoutes);
 app.use('/api/bookings', bookingRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 if (isTestEnv) {
     app.use('/api/transactions', transactionRoutes);

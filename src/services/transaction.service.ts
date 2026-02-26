@@ -7,6 +7,7 @@ import { BankRepository } from "../repositories/bank.repository";
 import { BankTransferService } from "./bank-transfer.service";
 import { HttpError } from "../errors/http-error";
 import { IUser } from "../models/user.model";
+import { NotificationService } from "./notification.service";
 import {
     BANK_TRANSFER_FIXED_FEE,
     DAILY_TRANSFER_LIMIT,
@@ -19,11 +20,13 @@ let userRepository = new UserRepository();
 let transactionRepository = new TransactionRepository();
 let bankRepository = new BankRepository();
 let bankTransferService = new BankTransferService();
+let notificationService = new NotificationService();
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const PIN_LOCK_MS = PIN_LOCKOUT_MINUTES * 60 * 1000;
 
 const normalizeAmount = (amount: number) => Math.round(amount * 100) / 100;
+const formatAmount = (amount: number) => normalizeAmount(amount).toFixed(2);
 
 const mapUser = (user: IUser) => ({
     id: user._id,
@@ -47,6 +50,35 @@ const parseBankAccountRegex = (pattern: string) => {
 };
 
 export class TransactionService {
+    private async notifyPaymentSuccess(options: {
+        userId: string;
+        title: string;
+        body: string;
+        txId?: string;
+        amount: number;
+        paymentType: string;
+        direction: "DEBIT" | "CREDIT";
+        counterpartyId?: string;
+    }) {
+        try {
+            await notificationService.createNotification({
+                userId: options.userId,
+                title: options.title,
+                body: options.body,
+                type: "PAYMENT_SUCCESS",
+                data: {
+                    txId: options.txId,
+                    amount: options.amount,
+                    paymentType: options.paymentType,
+                    direction: options.direction,
+                    counterpartyId: options.counterpartyId,
+                },
+            });
+        } catch (error) {
+            console.error("Failed to create payment notification:", error);
+        }
+    }
+
     async lookupBeneficiary(requesterId: string, phoneNumber: string) {
         const user = await userRepository.getUserByPhoneNumber(phoneNumber);
         if (!user) throw new HttpError(404, "Recipient not found");
@@ -296,6 +328,30 @@ export class TransactionService {
             throw new HttpError(500, "Transfer failed");
         }
 
+        const senderDisplayName = fromUser.fullName || fromUser.phoneNumber;
+        await Promise.all([
+            this.notifyPaymentSuccess({
+                userId: fromUser._id.toString(),
+                title: "Payment Successful",
+                body: `Payment of Rs. ${formatAmount(normalizedAmount)} successful`,
+                txId: receipt.txId,
+                amount: normalizedAmount,
+                paymentType: "TRANSFER",
+                direction: "DEBIT",
+                counterpartyId: toUser._id.toString(),
+            }),
+            this.notifyPaymentSuccess({
+                userId: toUser._id.toString(),
+                title: "Amount Received",
+                body: `You received Rs. ${formatAmount(normalizedAmount)} from ${senderDisplayName}`,
+                txId: receipt.txId,
+                amount: normalizedAmount,
+                paymentType: "TRANSFER",
+                direction: "CREDIT",
+                counterpartyId: fromUser._id.toString(),
+            }),
+        ]);
+
         return { receipt, warning };
     }
 
@@ -464,6 +520,17 @@ export class TransactionService {
                   to: { id: transfer.transactionId },
                   createdAt: transfer.createdAt,
               };
+
+        await this.notifyPaymentSuccess({
+            userId: fromUser._id.toString(),
+            title: "Payment Successful",
+            body: `Bank transfer of Rs. ${formatAmount(normalizedAmount)} successful`,
+            txId: receipt.txId,
+            amount: normalizedAmount,
+            paymentType: "BANK_TRANSFER",
+            direction: "DEBIT",
+            counterpartyId: bank._id.toString(),
+        });
 
         return { receipt, warning };
     }

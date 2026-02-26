@@ -10,6 +10,7 @@ import { TransactionRepository } from "../repositories/transaction.repository";
 import { UserRepository } from "../repositories/user.repository";
 import { IUser } from "../models/user.model";
 import { FeeService } from "./fee.service";
+import { NotificationService } from "./notification.service";
 
 let bookingRepository = new BookingRepository();
 let flightRepository = new FlightRepository();
@@ -17,6 +18,7 @@ let hotelRepository = new HotelRepository();
 let userRepository = new UserRepository();
 let transactionRepository = new TransactionRepository();
 let feeService = new FeeService();
+let notificationService = new NotificationService();
 
 interface CreateBookingInput {
     type: "flight" | "hotel";
@@ -36,6 +38,17 @@ interface BookingListInput {
 }
 
 const normalizeAmount = (amount: number) => Math.round(amount * 100) / 100;
+const formatAmount = (amount: number) => normalizeAmount(amount).toFixed(2);
+
+interface BookingPaymentResult {
+    booking: any;
+    transactionId: string;
+    txId?: string;
+    idempotentReplay: boolean;
+    amount: number;
+    fee: number;
+    totalDebited: number;
+}
 
 const isTransactionUnsupportedError = (error: unknown) => {
     if (!(error instanceof Error)) {
@@ -53,6 +66,26 @@ const namespacedBookingPayKey = (bookingId: string, idempotencyKey: string) =>
     `booking-pay:${bookingId}:${idempotencyKey}`;
 
 export class BookingService {
+    private async notifyBookingPaymentSuccess(userId: string, result: BookingPaymentResult) {
+        try {
+            await notificationService.createNotification({
+                userId,
+                title: "Payment Successful",
+                body: `Payment of Rs. ${formatAmount(result.totalDebited)} successful for booking`,
+                type: "PAYMENT_SUCCESS",
+                data: {
+                    txId: result.txId,
+                    transactionId: result.transactionId,
+                    amount: result.totalDebited,
+                    paymentType: "BOOKING_PAYMENT",
+                    direction: "DEBIT",
+                },
+            });
+        } catch (error) {
+            console.error("Failed to create booking payment notification:", error);
+        }
+    }
+
     async createBooking(userId: string, input: CreateBookingInput) {
         if (input.type === "flight") {
             return this.createFlightBooking(userId, input);
@@ -129,6 +162,7 @@ export class BookingService {
                 return {
                     booking: resolvedBooking,
                     transactionId: existingTx._id.toString(),
+                    txId: existingTx.txId,
                     idempotentReplay: true,
                     amount: metaAmount ?? existingTx.amount,
                     fee: metaFee ?? 0,
@@ -167,6 +201,9 @@ export class BookingService {
             });
 
             releaseClaim = false;
+            if (!transactionalResult.idempotentReplay) {
+                await this.notifyBookingPaymentSuccess(userId, transactionalResult);
+            }
             return transactionalResult;
         } catch (error: unknown) {
             if (!isTransactionUnsupportedError(error)) {
@@ -185,6 +222,9 @@ export class BookingService {
                 idempotencyKey: namespacedKey,
             });
             releaseClaim = false;
+            if (!fallbackResult.idempotentReplay) {
+                await this.notifyBookingPaymentSuccess(userId, fallbackResult);
+            }
             return fallbackResult;
         } finally {
             if (releaseClaim) {
@@ -397,11 +437,11 @@ export class BookingService {
         totalDebited: number;
         serviceType: "flight" | "hotel";
         idempotencyKey?: string;
-    }) {
+    }): Promise<BookingPaymentResult> {
         const session = await mongoose.startSession();
         let booking: any;
-        let tx: ITransaction | null = null;
         let transactionId: string | null = null;
+        let externalTxId: string | null = null;
 
         try {
             await session.withTransaction(async () => {
@@ -422,7 +462,7 @@ export class BookingService {
                     }
                 }
 
-                tx = await transactionRepository.createTransaction(
+                const tx = await transactionRepository.createTransaction(
                     {
                         from: new mongoose.Types.ObjectId(userId),
                         to: new mongoose.Types.ObjectId(payeeId),
@@ -443,6 +483,7 @@ export class BookingService {
                     session
                 );
                 transactionId = tx._id.toString();
+                externalTxId = tx.txId;
 
                 booking = await bookingRepository.markPaid(bookingId, transactionId, session);
                 if (!booking) {
@@ -453,13 +494,14 @@ export class BookingService {
             await session.endSession();
         }
 
-        if (!tx || !booking || !transactionId) {
+        if (!booking || !transactionId || !externalTxId) {
             throw new HttpError(500, "Payment failed");
         }
 
         return {
             booking,
             transactionId,
+            txId: externalTxId,
             idempotentReplay: false,
             amount,
             fee,
@@ -487,7 +529,7 @@ export class BookingService {
         totalDebited: number;
         serviceType: "flight" | "hotel";
         idempotencyKey?: string;
-    }) {
+    }): Promise<BookingPaymentResult> {
         let payerDebited = false;
         let payeeCredited = false;
         let revenueCredited = false;
@@ -544,6 +586,7 @@ export class BookingService {
             return {
                 booking,
                 transactionId: paymentTx._id.toString(),
+                txId: paymentTx.txId,
                 idempotentReplay: false,
                 amount,
                 fee,
@@ -559,6 +602,7 @@ export class BookingService {
                     return {
                         booking: healed,
                         transactionId: paymentTx._id.toString(),
+                        txId: paymentTx.txId,
                         idempotentReplay: false,
                         amount,
                         fee,

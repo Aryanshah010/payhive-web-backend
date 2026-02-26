@@ -9,13 +9,16 @@ import { TransactionRepository } from "../repositories/transaction.repository";
 import { UserRepository } from "../repositories/user.repository";
 import { UtilityRepository } from "../repositories/utility.repository";
 import { FeeService } from "./fee.service";
+import { NotificationService } from "./notification.service";
 
 let utilityRepository = new UtilityRepository();
 let userRepository = new UserRepository();
 let transactionRepository = new TransactionRepository();
 let feeService = new FeeService();
+let notificationService = new NotificationService();
 
 const normalizeAmount = (amount: number) => Math.round(amount * 100) / 100;
+const formatAmount = (amount: number) => normalizeAmount(amount).toFixed(2);
 
 const isTransactionUnsupportedError = (error: unknown) => {
     if (!(error instanceof Error)) {
@@ -41,11 +44,37 @@ const buildKey = (type: UtilityType, serviceId: string, customerRef: string, ide
 
 interface UtilityPaymentResult {
     transactionId: string;
+    txId?: string;
     receipt: Record<string, unknown>;
     idempotentReplay: boolean;
 }
 
 export class UtilityPaymentService {
+    private async notifyUtilityPaymentSuccess(options: {
+        userId: string;
+        txId?: string;
+        amount: number;
+        serviceType: UtilityType;
+    }) {
+        try {
+            const serviceLabel = options.serviceType === "internet" ? "Internet" : "Topup";
+            await notificationService.createNotification({
+                userId: options.userId,
+                title: "Payment Successful",
+                body: `${serviceLabel} payment of Rs. ${formatAmount(options.amount)} successful`,
+                type: "PAYMENT_SUCCESS",
+                data: {
+                    txId: options.txId,
+                    amount: options.amount,
+                    paymentType: "UTILITY_PAYMENT",
+                    direction: "DEBIT",
+                },
+            });
+        } catch (error) {
+            console.error("Failed to create utility payment notification:", error);
+        }
+    }
+
     async payInternetService(
         userId: string,
         serviceId: string,
@@ -123,6 +152,7 @@ export class UtilityPaymentService {
 
                 return {
                     transactionId: existingTx._id.toString(),
+                    txId: existingTx.txId,
                     receipt: (existingMeta.receipt as Record<string, unknown>) || {},
                     idempotentReplay: true,
                 };
@@ -132,7 +162,7 @@ export class UtilityPaymentService {
         const payee = await this.resolvePayee(userId);
         const revenueWallet = fee > 0 ? await this.resolveRevenueWallet(userId) : null;
         try {
-            return await this.payWithTransaction({
+            const result = await this.payWithTransaction({
                 userId,
                 payeeId: payee._id.toString(),
                 revenueWalletId: revenueWallet?._id.toString(),
@@ -147,11 +177,20 @@ export class UtilityPaymentService {
                 packageLabel: service.packageLabel || "",
                 idempotencyKey: namespacedKey,
             });
+            if (!result.idempotentReplay) {
+                await this.notifyUtilityPaymentSuccess({
+                    userId,
+                    txId: result.txId,
+                    amount: totalDebited,
+                    serviceType: type,
+                });
+            }
+            return result;
         } catch (error: unknown) {
             if (!isTransactionUnsupportedError(error)) {
                 throw error;
             }
-            return this.payWithFallback({
+            const result = await this.payWithFallback({
                 userId,
                 payeeId: payee._id.toString(),
                 revenueWalletId: revenueWallet?._id.toString(),
@@ -166,6 +205,15 @@ export class UtilityPaymentService {
                 packageLabel: service.packageLabel || "",
                 idempotencyKey: namespacedKey,
             });
+            if (!result.idempotentReplay) {
+                await this.notifyUtilityPaymentSuccess({
+                    userId,
+                    txId: result.txId,
+                    amount: totalDebited,
+                    serviceType: type,
+                });
+            }
+            return result;
         }
     }
 
@@ -330,9 +378,9 @@ export class UtilityPaymentService {
         idempotencyKey?: string;
     }): Promise<UtilityPaymentResult> {
         const session = await mongoose.startSession();
-        let tx: ITransaction | null = null;
         let receipt: Record<string, unknown> | null = null;
         let transactionId: string | null = null;
+        let externalTxId: string | null = null;
 
         try {
             await session.withTransaction(async () => {
@@ -368,7 +416,7 @@ export class UtilityPaymentService {
                     createdAt: new Date(),
                 });
 
-                tx = await transactionRepository.createTransaction(
+                const tx = await transactionRepository.createTransaction(
                     {
                         from: new mongoose.Types.ObjectId(userId),
                         to: new mongoose.Types.ObjectId(payeeId),
@@ -394,17 +442,19 @@ export class UtilityPaymentService {
                     session
                 );
                 transactionId = tx._id.toString();
+                externalTxId = tx.txId;
             });
         } finally {
             await session.endSession();
         }
 
-        if (!tx || !receipt || !transactionId) {
+        if (!receipt || !transactionId || !externalTxId) {
             throw new HttpError(500, "Utility payment failed");
         }
 
         return {
             transactionId,
+            txId: externalTxId,
             receipt,
             idempotentReplay: false,
         };
@@ -506,6 +556,7 @@ export class UtilityPaymentService {
 
             return {
                 transactionId: paymentTx._id.toString(),
+                txId: paymentTx.txId,
                 receipt,
                 idempotentReplay: false,
             };

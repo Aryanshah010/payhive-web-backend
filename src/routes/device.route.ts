@@ -7,6 +7,7 @@ const deviceController = new DeviceController();
 
 router.get("/", authorizedMiddleware, deviceController.listDevices);
 router.get("/pending", authorizedMiddleware, deviceController.listPendingDevices);
+router.patch("/:deviceId/fcm-token", authorizedMiddleware, deviceController.updateFcmToken);
 router.post("/:deviceId/allow", authorizedMiddleware, deviceController.allowDevice);
 router.post("/:deviceId/block", authorizedMiddleware, deviceController.blockDevice);
 
