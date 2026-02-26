@@ -18,6 +18,7 @@ import adminInternetServiceRoutes from "./routes/admin/admin.internet-service.ro
 import adminTopupServiceRoutes from "./routes/admin/admin.topup-service.route";
 import adminBankRoutes from "./routes/admin/admin.bank.route";
 import adminFeeConfigRoutes from "./routes/admin/admin.fee-config.route";
+import adminDashboardRoutes from "./routes/admin/admin.dashboard.route";
 import internetServiceRoutes from "./routes/internet-service.route";
 import topupServiceRoutes from "./routes/topup-service.route";
 import bankRoutes from "./routes/bank.route";
@@ -68,6 +69,7 @@ app.use('/api/admin/internet-services', adminInternetServiceRoutes);
 app.use('/api/admin/topup-services', adminTopupServiceRoutes);
 app.use('/api/admin/banks', adminBankRoutes);
 app.use('/api/admin/fee-configs', adminFeeConfigRoutes);
+app.use('/api/admin/dashboard', adminDashboardRoutes);
 app.use('/api/profile', userProfile);
 app.use('/api/devices', deviceRoutes);
 app.use('/api/flights', flightRoutes);

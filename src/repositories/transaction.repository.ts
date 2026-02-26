@@ -44,6 +44,17 @@ export interface ITransactionRepository {
     getBySenderAndIdempotencyKey(userId: string, idempotencyKey: string): Promise<ITransaction | null>;
     getByTxIdForUser(userId: string, txId: string): Promise<ITransaction | null>;
     listByUser(params: TransactionHistoryListByUserParams): Promise<{ items: TransactionHistoryListItem[]; total: number }>;
+    getDashboardMetrics(startDate: Date, endDate: Date): Promise<{
+        totalTransactions: number;
+        totalTransactionAmount: number;
+        totalRevenue: number;
+        monthlyData: Array<{
+            year: number;
+            month: number;
+            transactions: number;
+            revenue: number;
+        }>;
+    }>;
 }
 
 export class TransactionRepository implements ITransactionRepository {
@@ -177,6 +188,104 @@ export class TransactionRepository implements ITransactionRepository {
 
         const total = countResult[0]?.total ?? 0;
         return { items, total };
+    }
+
+    async getDashboardMetrics(startDate: Date, endDate: Date): Promise<{
+        totalTransactions: number;
+        totalTransactionAmount: number;
+        totalRevenue: number;
+        monthlyData: Array<{
+            year: number;
+            month: number;
+            transactions: number;
+            revenue: number;
+        }>;
+    }> {
+        const pipeline: mongoose.PipelineStage[] = [
+            {
+                $match: {
+                    status: 'SUCCESS',
+                    createdAt: { $gte: startDate, $lte: endDate },
+                },
+            },
+            {
+                $facet: {
+                    totals: [
+                        {
+                            $group: {
+                                _id: null,
+                                totalTransactions: { $sum: 1 },
+                                totalTransactionAmount: { $sum: '$amount' },
+                                totalRevenue: {
+                                    $sum: {
+                                        $cond: [
+                                            {
+                                                $in: [
+                                                    '$paymentType',
+                                                    ['BANK_TRANSFER', 'UTILITY_PAYMENT', 'BOOKING_PAYMENT'],
+                                                ],
+                                            },
+                                            { $ifNull: ['$meta.fee', 0] },
+                                            0,
+                                        ],
+                                    },
+                                },
+                            },
+                        },
+                    ],
+                    monthly: [
+                        {
+                            $group: {
+                                _id: {
+                                    year: { $year: '$createdAt' },
+                                    month: { $month: '$createdAt' },
+                                },
+                                transactions: { $sum: 1 },
+                                revenue: {
+                                    $sum: {
+                                        $cond: [
+                                            {
+                                                $in: [
+                                                    '$paymentType',
+                                                    ['BANK_TRANSFER', 'UTILITY_PAYMENT', 'BOOKING_PAYMENT'],
+                                                ],
+                                            },
+                                            { $ifNull: ['$meta.fee', 0] },
+                                            0,
+                                        ],
+                                    },
+                                },
+                            },
+                        },
+                        {
+                            $sort: { '_id.year': 1, '_id.month': 1 },
+                        },
+                        {
+                            $project: {
+                                _id: 0,
+                                year: '$_id.year',
+                                month: '$_id.month',
+                                transactions: 1,
+                                revenue: 1,
+                            },
+                        },
+                    ],
+                },
+            },
+        ];
+
+        const result = await TransactionModel.aggregate(pipeline).exec();
+        const [aggregated] = result;
+
+        const [totalsData] = aggregated.totals;
+        const monthlyData = aggregated.monthly;
+
+        return {
+            totalTransactions: totalsData?.totalTransactions || 0,
+            totalTransactionAmount: totalsData?.totalTransactionAmount || 0,
+            totalRevenue: totalsData?.totalRevenue || 0,
+            monthlyData: monthlyData || [],
+        };
     }
 }
 
