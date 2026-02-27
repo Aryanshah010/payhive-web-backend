@@ -24,6 +24,7 @@ import topupServiceRoutes from "./routes/topup-service.route";
 import bankRoutes from "./routes/bank.route";
 import bankTransferRoutes from "./routes/bank-transfer.route";
 import notificationRoutes from "./routes/notification.route";
+import moneyRequestRoutes from "./routes/money-request.route";
 
 dotenv.config();
 console.log(process.env.PORT);
@@ -84,8 +85,10 @@ app.use('/api/notifications', notificationRoutes);
 
 if (isTestEnv) {
     app.use('/api/transactions', transactionRoutes);
+    app.use('/api/money-requests', moneyRequestRoutes);
 } else {
     app.use('/api/transactions', transactionLimiter, transactionRoutes);
+    app.use('/api/money-requests', transactionLimiter, moneyRequestRoutes);
 }
 
 app.use("/uploads", express.static(path.join(__dirname, '../uploads')));

@@ -177,4 +177,44 @@ describe("Notification Integration", () => {
         });
         expect(receiverMatch).toBeDefined();
     });
+
+    test("money request notifications include lifecycle action payload", async () => {
+        const requester = await registerAndLogin("mr-requester");
+        const receiver = await registerAndLogin("mr-receiver");
+
+        const createRequestRes = await request(app)
+            .post("/api/money-requests")
+            .set("Authorization", `Bearer ${requester.token}`)
+            .send({
+                toPhoneNumber: receiver.user.phoneNumber,
+                amount: 90,
+            });
+
+        expect(createRequestRes.statusCode).toBe(201);
+        const moneyRequestId = createRequestRes.body.data.id as string;
+
+        const receiverNotifications = await request(app)
+            .get("/api/notifications?type=REQUEST_MONEY")
+            .set("Authorization", `Bearer ${receiver.token}`);
+
+        const createdMatch = receiverNotifications.body.data.items.find((item: any) => {
+            return item?.data?.moneyRequestId === moneyRequestId && item?.data?.action === "CREATED";
+        });
+        expect(createdMatch).toBeDefined();
+
+        await request(app)
+            .post(`/api/money-requests/${moneyRequestId}/reject`)
+            .set("Authorization", `Bearer ${receiver.token}`)
+            .send({})
+            .expect(200);
+
+        const requesterNotifications = await request(app)
+            .get("/api/notifications?type=REQUEST_MONEY")
+            .set("Authorization", `Bearer ${requester.token}`);
+
+        const rejectedMatch = requesterNotifications.body.data.items.find((item: any) => {
+            return item?.data?.moneyRequestId === moneyRequestId && item?.data?.action === "REJECTED";
+        });
+        expect(rejectedMatch).toBeDefined();
+    });
 });

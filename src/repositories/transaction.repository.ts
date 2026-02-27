@@ -38,6 +38,7 @@ export interface TransactionHistoryListByUserParams {
 
 export interface ITransactionRepository {
     createTransaction(data: Partial<ITransaction>, session?: ClientSession): Promise<ITransaction>;
+    getById(transactionId: string): Promise<ITransaction | null>;
     getAverageDebit(userId: string, sinceDate: Date): Promise<number>;
     getTotalDebitForDate(userId: string, date: Date): Promise<number>;
     getByIdempotencyKey(userId: string, idempotencyKey: string): Promise<ITransaction | null>;
@@ -61,6 +62,10 @@ export class TransactionRepository implements ITransactionRepository {
     async createTransaction(data: Partial<ITransaction>, session?: ClientSession): Promise<ITransaction> {
         const tx = new TransactionModel(data);
         return await tx.save(session ? { session } : {});
+    }
+
+    async getById(transactionId: string): Promise<ITransaction | null> {
+        return TransactionModel.findById(transactionId);
     }
 
     async getAverageDebit(userId: string, sinceDate: Date): Promise<number> {
