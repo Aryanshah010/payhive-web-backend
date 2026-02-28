@@ -120,6 +120,7 @@ export class TransactionController {
                           parsedData.data.amount,
                           parsedData.data.remark,
                           parsedData.data.pin,
+                          parsedData.data.moneyRequestId,
                           idempotencyKey
                       );
 

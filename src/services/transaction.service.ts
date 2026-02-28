@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from "uuid";
 import { UserRepository } from "../repositories/user.repository";
 import { TransactionRepository, TransactionHistoryFilterDirection } from "../repositories/transaction.repository";
 import { BankRepository } from "../repositories/bank.repository";
+import { MoneyRequestRepository } from "../repositories/money-request.repository";
 import { BankTransferService } from "./bank-transfer.service";
 import { HttpError } from "../errors/http-error";
 import { IUser } from "../models/user.model";
@@ -19,6 +20,7 @@ import {
 let userRepository = new UserRepository();
 let transactionRepository = new TransactionRepository();
 let bankRepository = new BankRepository();
+let moneyRequestRepository = new MoneyRequestRepository();
 let bankTransferService = new BankTransferService();
 let notificationService = new NotificationService();
 
@@ -174,6 +176,7 @@ export class TransactionService {
         amount: number,
         remark: string | undefined,
         pin: string,
+        moneyRequestId?: string,
         idempotencyKey?: string
     ) {
         const fromUser = await userRepository.getUserById(userId);
@@ -260,12 +263,22 @@ export class TransactionService {
                     throw new HttpError(409, "Idempotency key already used with different payload");
                 }
 
+                if (moneyRequestId) {
+                    const existingMeta = (existing.meta ?? {}) as Record<string, unknown>;
+                    const existingMoneyRequestId = (existingMeta.moneyRequestId ?? "").toString();
+                    if (existingMoneyRequestId !== moneyRequestId) {
+                        throw new HttpError(409, "Idempotency key already used with different payload");
+                    }
+                }
+
                 return {
                     receipt: {
                         txId: existing.txId,
                         status: existing.status,
                         amount: existing.amount,
                         remark: existing.remark,
+                        paymentType: existing.paymentType,
+                        meta: existing.meta ?? null,
                         from: mapUser(fromUser),
                         to: mapUser(toUser),
                         createdAt: existing.createdAt,
@@ -273,6 +286,41 @@ export class TransactionService {
                     warning,
                 };
             }
+        }
+
+        let linkedMoneyRequest: { id: string } | null = null;
+        if (moneyRequestId) {
+            await moneyRequestRepository.expireByIdIfPending(moneyRequestId);
+            const request = await moneyRequestRepository.getById(moneyRequestId);
+            if (!request) {
+                throw new HttpError(404, "Money request not found");
+            }
+
+            if (request.receiver.toString() !== fromUser._id.toString()) {
+                throw new HttpError(404, "Money request not found");
+            }
+
+            if (request.requester.toString() !== toUser._id.toString()) {
+                throw new HttpError(409, "Money request does not match recipient");
+            }
+
+            if (request.status === "EXPIRED") {
+                throw new HttpError(410, "Money request expired");
+            }
+
+            if (request.status === "ACCEPTED") {
+                throw new HttpError(409, "Money request already accepted");
+            }
+
+            if (request.status !== "PENDING") {
+                throw new HttpError(409, `Money request already ${request.status.toLowerCase()}`);
+            }
+
+            if (normalizeAmount(request.amount) !== normalizedAmount) {
+                throw new HttpError(409, "Money request amount mismatch");
+            }
+
+            linkedMoneyRequest = { id: request._id.toString() };
         }
 
         // Daily transfer limit check (before starting MongoDB transaction)
@@ -305,16 +353,36 @@ export class TransactionService {
                         remark: remark || "",
                         status: "SUCCESS",
                         txId: uuidv4(),
+                        ...(linkedMoneyRequest
+                            ? {
+                                  meta: {
+                                      moneyRequestId: linkedMoneyRequest.id,
+                                  },
+                              }
+                            : {}),
                         ...(idempotencyKey ? { idempotencyKey } : {}),
                     },
                     session
                 );
+
+                if (linkedMoneyRequest) {
+                    const acceptedRequest = await moneyRequestRepository.markAcceptedIfPending(
+                        linkedMoneyRequest.id,
+                        tx._id,
+                        session
+                    );
+                    if (!acceptedRequest) {
+                        throw new HttpError(409, "Money request already processed");
+                    }
+                }
 
                 receipt = {
                     txId: tx.txId,
                     status: tx.status,
                     amount: tx.amount,
                     remark: tx.remark,
+                    paymentType: tx.paymentType,
+                    meta: tx.meta ?? null,
                     from: mapUser(fromUser),
                     to: mapUser(toUser),
                     createdAt: tx.createdAt,

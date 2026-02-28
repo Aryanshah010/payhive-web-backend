@@ -4,6 +4,7 @@ import {
     MoneyRequestCreateSchema,
     MoneyRequestIdParamSchema,
     MoneyRequestListQuerySchema,
+    MoneyRequestRespondSchema,
 } from "../types/money-request.type";
 
 export const MoneyRequestCreateDto = MoneyRequestCreateSchema;
@@ -11,6 +12,9 @@ export type MoneyRequestCreateDto = z.infer<typeof MoneyRequestCreateDto>;
 
 export const MoneyRequestAcceptDto = MoneyRequestAcceptSchema;
 export type MoneyRequestAcceptDto = z.infer<typeof MoneyRequestAcceptDto>;
+
+export const MoneyRequestRespondDto = MoneyRequestRespondSchema;
+export type MoneyRequestRespondDto = z.infer<typeof MoneyRequestRespondDto>;
 
 export const MoneyRequestListQueryDto = MoneyRequestListQuerySchema;
 export type MoneyRequestListQueryDto = z.infer<typeof MoneyRequestListQueryDto>;

@@ -611,4 +611,12 @@ export class MoneyRequestService {
             [receiver._id.toString(), receiver],
         ]));
     }
+
+    async respondRequest(userId: string, requestId: string, action: "REJECT" | "CANCEL") {
+        if (action === "REJECT") {
+            return this.rejectRequest(userId, requestId);
+        }
+
+        return this.cancelRequest(userId, requestId);
+    }
 }

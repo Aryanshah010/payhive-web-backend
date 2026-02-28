@@ -5,6 +5,7 @@ import {
     MoneyRequestCreateDto,
     MoneyRequestIdParamDto,
     MoneyRequestListQueryDto,
+    MoneyRequestRespondDto,
 } from "../dtos/money-request.dto";
 import { MoneyRequestService } from "../services/money-request.service";
 
@@ -211,6 +212,49 @@ export class MoneyRequestController {
             return res.status(200).json({
                 success: true,
                 message: "Money request rejected",
+                data,
+            });
+        } catch (error: Error | any) {
+            return res.status(error.statusCode || 500).json({
+                success: false,
+                message: error.message || "Internal Server Error",
+                ...(error.details ? { data: error.details } : {}),
+            });
+        }
+    }
+
+    async respond(req: Request, res: Response) {
+        try {
+            const userId = req.user?._id;
+            if (!userId) {
+                return res.status(400).json({ success: false, message: "User ID not provided" });
+            }
+
+            const parsedParams = MoneyRequestIdParamDto.safeParse(req.params);
+            if (!parsedParams.success) {
+                return res.status(400).json({
+                    success: false,
+                    message: z.prettifyError(parsedParams.error),
+                });
+            }
+
+            const parsedBody = MoneyRequestRespondDto.safeParse(req.body);
+            if (!parsedBody.success) {
+                return res.status(400).json({
+                    success: false,
+                    message: z.prettifyError(parsedBody.error),
+                });
+            }
+
+            const data = await moneyRequestService.respondRequest(
+                userId.toString(),
+                parsedParams.data.requestId,
+                parsedBody.data.action
+            );
+
+            return res.status(200).json({
+                success: true,
+                message: "Money request updated",
                 data,
             });
         } catch (error: Error | any) {

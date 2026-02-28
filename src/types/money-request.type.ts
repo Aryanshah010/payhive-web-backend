@@ -48,6 +48,12 @@ export const MoneyRequestAcceptSchema = z.object({
     pin: z.string().regex(/^[0-9]{4}$/, "PIN must be exactly 4 digits"),
 });
 
+export const MoneyRequestRespondActionSchema = z.enum(["REJECT", "CANCEL"]);
+
+export const MoneyRequestRespondSchema = z.object({
+    action: MoneyRequestRespondActionSchema,
+});
+
 export const MoneyRequestStatusFilterSchema = z.enum([
     "all",
     "pending",
@@ -74,5 +80,6 @@ export const MoneyRequestIdParamSchema = z.object({
 
 export type MoneyRequestCreateType = z.infer<typeof MoneyRequestCreateSchema>;
 export type MoneyRequestAcceptType = z.infer<typeof MoneyRequestAcceptSchema>;
+export type MoneyRequestRespondType = z.infer<typeof MoneyRequestRespondSchema>;
 export type MoneyRequestListQueryType = z.infer<typeof MoneyRequestListQuerySchema>;
 export type MoneyRequestIdParamType = z.infer<typeof MoneyRequestIdParamSchema>;

@@ -13,12 +13,17 @@ const AccountNumberSchema = z
     .trim()
     .regex(/^[0-9]{8,20}$/, "accountNumber must be 8 to 20 digits");
 
+const ObjectIdSchema = z
+    .string()
+    .regex(/^[0-9a-fA-F]{24}$/, "moneyRequestId must be a valid ObjectId");
+
 export const TransactionBaseSchema = z
     .object({
         paymentType: PaymentTypeSchema,
         toPhoneNumber: PhoneNumberSchema.optional(),
         bankName: BankNameSchema.optional(),
         accountNumber: AccountNumberSchema.optional(),
+        moneyRequestId: ObjectIdSchema.optional(),
         amount: z
             .number()
             .positive("Amount must be greater than 0")

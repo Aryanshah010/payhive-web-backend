@@ -265,6 +265,52 @@ describe("Money Request Integration", () => {
         expect(requestRes.body.data.status).toBe("PENDING");
     });
 
+    test("transactions confirm with moneyRequestId marks request accepted (app compatibility)", async () => {
+        const requester = await registerAndLogin("compat-requester");
+        const receiver = await registerAndLogin("compat-receiver");
+
+        await request(app)
+            .put("/api/profile/pin")
+            .set("Authorization", `Bearer ${receiver.token}`)
+            .send({ pin: "1234" })
+            .expect(200);
+        await UserModel.findByIdAndUpdate(receiver.id, { balance: 1000 });
+
+        const createRes = await request(app)
+            .post("/api/money-requests")
+            .set("Authorization", `Bearer ${requester.token}`)
+            .send({
+                toPhoneNumber: receiver.user.phoneNumber,
+                amount: 130,
+                remark: "compat accept",
+            })
+            .expect(201);
+
+        const moneyRequestId = createRes.body.data.id as string;
+
+        const confirmRes = await request(app)
+            .post("/api/transactions/confirm")
+            .set("Authorization", `Bearer ${receiver.token}`)
+            .set("Idempotency-Key", "compat-money-request-idem-123456")
+            .send({
+                toPhoneNumber: requester.user.phoneNumber,
+                amount: 130,
+                remark: "compat accept",
+                moneyRequestId,
+                pin: "1234",
+            });
+
+        expect(confirmRes.statusCode).toBe(200);
+        expect(confirmRes.body.data.receipt.meta.moneyRequestId).toBe(moneyRequestId);
+
+        const detailRes = await request(app)
+            .get(`/api/money-requests/${moneyRequestId}`)
+            .set("Authorization", `Bearer ${receiver.token}`);
+        expect(detailRes.statusCode).toBe(200);
+        expect(detailRes.body.data.status).toBe("ACCEPTED");
+        expect(detailRes.body.data.transactionId).toBeTruthy();
+    });
+
     test("reject and cancel send lifecycle notifications", async () => {
         const requester = await registerAndLogin("lifecycle-requester");
         const receiver = await registerAndLogin("lifecycle-receiver");
@@ -445,5 +491,44 @@ describe("Money Request Integration", () => {
             .set("Authorization", `Bearer ${receiver.token}`)
             .send({});
         expect(rejectAfterAccept.statusCode).toBe(409);
+    });
+
+    test("respond endpoint supports REJECT and CANCEL actions (app compatibility)", async () => {
+        const requester = await registerAndLogin("respond-requester");
+        const receiver = await registerAndLogin("respond-receiver");
+
+        const rejectReq = await request(app)
+            .post("/api/money-requests")
+            .set("Authorization", `Bearer ${requester.token}`)
+            .send({
+                toPhoneNumber: receiver.user.phoneNumber,
+                amount: 40,
+            })
+            .expect(201);
+
+        const rejectRes = await request(app)
+            .post(`/api/money-requests/${rejectReq.body.data.id}/respond`)
+            .set("Authorization", `Bearer ${receiver.token}`)
+            .send({ action: "REJECT" });
+
+        expect(rejectRes.statusCode).toBe(200);
+        expect(rejectRes.body.data.status).toBe("REJECTED");
+
+        const cancelReq = await request(app)
+            .post("/api/money-requests")
+            .set("Authorization", `Bearer ${requester.token}`)
+            .send({
+                toPhoneNumber: receiver.user.phoneNumber,
+                amount: 41,
+            })
+            .expect(201);
+
+        const cancelRes = await request(app)
+            .post(`/api/money-requests/${cancelReq.body.data.id}/respond`)
+            .set("Authorization", `Bearer ${requester.token}`)
+            .send({ action: "CANCEL" });
+
+        expect(cancelRes.statusCode).toBe(200);
+        expect(cancelRes.body.data.status).toBe("CANCELED");
     });
 });
