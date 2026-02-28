@@ -25,6 +25,7 @@ import bankRoutes from "./routes/bank.route";
 import bankTransferRoutes from "./routes/bank-transfer.route";
 import notificationRoutes from "./routes/notification.route";
 import moneyRequestRoutes from "./routes/money-request.route";
+import undoRequestRoutes from "./routes/undo-request.route";
 
 dotenv.config();
 console.log(process.env.PORT);
@@ -83,12 +84,15 @@ app.use('/api/bank-transfers', bankTransferRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/notifications', notificationRoutes);
 
+
 if (isTestEnv) {
     app.use('/api/transactions', transactionRoutes);
     app.use('/api/money-requests', moneyRequestRoutes);
+    app.use('/api/undo-requests', undoRequestRoutes);
 } else {
     app.use('/api/transactions', transactionLimiter, transactionRoutes);
     app.use('/api/money-requests', transactionLimiter, moneyRequestRoutes);
+    app.use('/api/undo-requests', transactionLimiter, undoRequestRoutes);
 }
 
 app.use("/uploads", express.static(path.join(__dirname, '../uploads')));
