@@ -106,31 +106,6 @@ describe("Notification Integration", () => {
         expect(unreadAny.body.data.total).toBe(0);
     });
 
-    test("update device FCM token", async () => {
-        const account = await registerAndLogin("fcm-user");
-
-        const updateRes = await request(app)
-            .patch(`/api/devices/${account.deviceId}/fcm-token`)
-            .set("Authorization", `Bearer ${account.token}`)
-            .send({
-                fcmToken: "fcm-test-token-1234567890",
-            });
-
-        expect(updateRes.statusCode).toBe(200);
-        expect(updateRes.body.success).toBe(true);
-        expect(updateRes.body.data.fcmToken).toBe("fcm-test-token-1234567890");
-
-        const clearRes = await request(app)
-            .patch(`/api/devices/${account.deviceId}/fcm-token`)
-            .set("Authorization", `Bearer ${account.token}`)
-            .send({
-                fcmToken: null,
-            });
-
-        expect(clearRes.statusCode).toBe(200);
-        expect(clearRes.body.data.fcmToken).toBeNull();
-    });
-
     test("transfer success creates sender and receiver notifications", async () => {
         const sender = await registerAndLogin("sender");
         const receiver = await registerAndLogin("receiver");

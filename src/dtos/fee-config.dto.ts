@@ -7,7 +7,9 @@ import {
 export const CreateFeeConfigDto = FeeConfigSchema;
 export type CreateFeeConfigDto = z.infer<typeof CreateFeeConfigDto>;
 
-export const UpdateFeeConfigDto = FeeConfigSchema.partial();
+export const UpdateFeeConfigDto = FeeConfigSchema.partial().extend({
+    isActive: z.boolean().optional(),
+});
 export type UpdateFeeConfigDto = z.infer<typeof UpdateFeeConfigDto>;
 
 export const FeeConfigListQueryDto = FeeConfigListQuerySchema;

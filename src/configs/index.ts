@@ -17,7 +17,7 @@ export const BANK_TRANSFER_FIXED_FEE = 10;
 // Transfer limits
 export const MAX_TRANSFER_AMOUNT: number = process.env.MAX_TRANSFER_AMOUNT
     ? parseInt(process.env.MAX_TRANSFER_AMOUNT)
-    : 100000;
+    : 1000000;
 
 export const DAILY_TRANSFER_LIMIT: number = process.env.DAILY_TRANSFER_LIMIT
     ? parseInt(process.env.DAILY_TRANSFER_LIMIT)

@@ -10,6 +10,7 @@ import { FeeConfigModel } from "../../models/fee-config.model";
 import { NotificationModel } from "../../models/notification.model";
 import { MoneyRequestModel } from "../../models/money-request.model";
 import { UndoRequestModel } from "../../models/undo-request.model";
+import { DeviceModel } from "../../models/device.model";
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -26,6 +27,7 @@ export const cleanupTestData = async (prefix: string) => {
         await BookingModel.deleteMany({ userId: { $in: userIds } });
         await BankTransferModel.deleteMany({ userId: { $in: userIds } });
         await NotificationModel.deleteMany({ userId: { $in: userIds } });
+        await DeviceModel.deleteMany({ userId: { $in: userIds } });
         await MoneyRequestModel.deleteMany({
             $or: [{ requester: { $in: userIds } }, { receiver: { $in: userIds } }],
         });

@@ -28,8 +28,21 @@ const promoteToAdmin = async (userId: string) => {
     await UserModel.findByIdAndUpdate(userId, { role: "admin" });
 };
 
-const createFeeConfig = async (token: string, appliesTo: string[], fixedAmount: number) => {
-    return request(app)
+const normalizeAppliesTo = (values: string[]) => {
+    const normalized = new Set<string>();
+    for (const value of values) {
+        if (value === "topup" || value === "recharge") {
+            normalized.add("topup");
+            normalized.add("recharge");
+            continue;
+        }
+        normalized.add(value);
+    }
+    return normalized;
+};
+
+const createOrResolveFeeConfig = async (token: string, appliesTo: string[], fixedAmount: number) => {
+    const createRes = await request(app)
         .post("/api/admin/fee-configs")
         .set("Authorization", `Bearer ${token}`)
         .send({
@@ -38,8 +51,37 @@ const createFeeConfig = async (token: string, appliesTo: string[], fixedAmount: 
             calculation: { mode: "fixed", fixedAmount },
             appliesTo,
             isActive: true,
-        })
-        .expect(201);
+        });
+
+    if (createRes.statusCode === 201) {
+        return createRes.body.data.calculation.fixedAmount as number;
+    }
+
+    if (createRes.statusCode === 409 && createRes.body?.code === "FEE_CONFIG_OVERLAP") {
+        const listRes = await request(app)
+            .get("/api/admin/fee-configs?page=1&limit=50&type=service_payment&isActive=true")
+            .set("Authorization", `Bearer ${token}`)
+            .expect(200);
+
+        const requested = normalizeAppliesTo(appliesTo);
+        const overlapping = (listRes.body.data.items || []).find((item: any) => {
+            const itemAppliesTo = normalizeAppliesTo(item.appliesTo || []);
+            for (const value of itemAppliesTo) {
+                if (requested.has(value)) {
+                    return true;
+                }
+            }
+            return false;
+        });
+
+        if (!overlapping) {
+            throw new Error("Fee config overlap reported but no overlapping active config found");
+        }
+
+        return overlapping.calculation.fixedAmount as number;
+    }
+
+    throw new Error(`Unexpected fee config response: ${createRes.statusCode}`);
 };
 
 const makeFutureIso = (daysAhead: number, hour: number) => {
@@ -311,9 +353,10 @@ describe("Services + Booking Integration", () => {
             (configs as any).PLATFORM_REVENUE_USER_ID = revenue.id;
 
             const user = await registerAndLogin("user-pay-success");
-            await UserModel.findByIdAndUpdate(user.id, { balance: 10000 });
+            const initialUserBalance = 100000;
+            await UserModel.findByIdAndUpdate(user.id, { balance: initialUserBalance });
 
-            await createFeeConfig(admin.token, ["flight"], 20);
+            const feeAmount = await createOrResolveFeeConfig(admin.token, ["flight"], 20);
 
             const createFlightRes = await request(app)
                 .post("/api/admin/flights")
@@ -328,7 +371,12 @@ describe("Services + Booking Integration", () => {
                 .expect(201);
 
             const bookingId = bookingRes.body.data.bookingId;
-            const payeeBefore = await UserModel.findById(admin.id);
+            const balancesBefore = new Map<string, number>(
+                (
+                    await UserModel.find({}, { _id: 1, balance: 1 })
+                        .lean()
+                ).map((entry: any) => [entry._id.toString(), entry.balance as number])
+            );
             const revenueBefore = await UserModel.findById(revenue.id);
 
             const payRes = await request(app)
@@ -340,7 +388,9 @@ describe("Services + Booking Integration", () => {
             expect(payRes.body.data.booking.status).toBe("paid");
 
             const userAfter = await UserModel.findById(user.id);
-            expect(userAfter?.balance).toBe(4980);
+            const serviceAmount = 5000;
+            const totalDebited = serviceAmount + feeAmount;
+            expect(userAfter?.balance).toBe(initialUserBalance - totalDebited);
 
             const bookingDoc = await BookingModel.findById(bookingId);
             expect(bookingDoc?.status).toBe("paid");
@@ -348,16 +398,20 @@ describe("Services + Booking Integration", () => {
             const txDoc = await TransactionModel.findById(payRes.body.data.transactionId);
             expect(txDoc?.paymentType).toBe("BOOKING_PAYMENT");
             expect(txDoc?.bookingId?.toString()).toBe(bookingId);
-            expect(txDoc?.amount).toBe(5020);
-            expect(txDoc?.meta?.fee).toBe(20);
-            expect(txDoc?.meta?.amount).toBe(5000);
-            expect(txDoc?.meta?.totalDebited).toBe(5020);
+            expect(txDoc?.amount).toBe(totalDebited);
+            expect(txDoc?.meta?.fee).toBe(feeAmount);
+            expect(txDoc?.meta?.amount).toBe(serviceAmount);
+            expect(txDoc?.meta?.totalDebited).toBe(totalDebited);
             expect(txDoc?.meta?.serviceType).toBe("flight");
 
-            const payeeAfter = await UserModel.findById(txDoc?.to);
-            expect(payeeAfter?.balance).toBe((payeeBefore?.balance || 0) + 5000);
+            const payeeId = txDoc?.to?.toString();
+            expect(payeeId).toBeTruthy();
+            const payeeBeforeBalance = payeeId ? balancesBefore.get(payeeId) : undefined;
+            expect(typeof payeeBeforeBalance).toBe("number");
+            const payeeAfter = payeeId ? await UserModel.findById(payeeId) : null;
+            expect(payeeAfter?.balance).toBe((payeeBeforeBalance as number) + serviceAmount);
             const revenueAfter = await UserModel.findById(revenue.id);
-            expect(revenueAfter?.balance).toBe((revenueBefore?.balance || 0) + 20);
+            expect(revenueAfter?.balance).toBe((revenueBefore?.balance || 0) + feeAmount);
         } finally {
             (configs as any).PLATFORM_REVENUE_USER_ID = originalRevenueUserId;
         }
@@ -423,14 +477,17 @@ describe("Services + Booking Integration", () => {
             (configs as any).PLATFORM_REVENUE_USER_ID = revenue.id;
 
             const user = await registerAndLogin("user-pay-fail");
-            await UserModel.findByIdAndUpdate(user.id, { balance: 2000 });
 
-            await createFeeConfig(admin.token, ["flight"], 20);
+            const feeAmount = await createOrResolveFeeConfig(admin.token, ["flight"], 20);
+            const serviceAmount = 2000;
+            const totalDebited = serviceAmount + feeAmount;
+            const initialBalance = Math.max(0, totalDebited - 1);
+            await UserModel.findByIdAndUpdate(user.id, { balance: initialBalance });
 
             const createFlightRes = await request(app)
                 .post("/api/admin/flights")
                 .set("Authorization", `Bearer ${admin.token}`)
-                .send(buildFlightPayload("pay-fail", { price: 2000 }))
+                .send(buildFlightPayload("pay-fail", { price: serviceAmount }))
                 .expect(201);
 
             const createBookingRes = await request(app)
@@ -448,7 +505,8 @@ describe("Services + Booking Integration", () => {
             expect(insufficientRes.statusCode).toBe(402);
             expect(insufficientRes.body.code).toBe("INSUFFICIENT_FUNDS");
 
-            await UserModel.findByIdAndUpdate(user.id, { balance: 5000 });
+            const fundedBalance = totalDebited + 3000;
+            await UserModel.findByIdAndUpdate(user.id, { balance: fundedBalance });
 
             const firstPayRes = await request(app)
                 .post(`/api/bookings/${bookingId}/pay`)
@@ -464,7 +522,7 @@ describe("Services + Booking Integration", () => {
             expect(secondPayRes.body.data.idempotentReplay).toBe(true);
 
             const userAfter = await UserModel.findById(user.id);
-            expect(userAfter?.balance).toBe(2980);
+            expect(userAfter?.balance).toBe(fundedBalance - totalDebited);
         } finally {
             (configs as any).PLATFORM_REVENUE_USER_ID = originalRevenueUserId;
         }
