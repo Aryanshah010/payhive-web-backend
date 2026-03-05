@@ -16,8 +16,16 @@ import adminFlightRoutes from "./routes/admin/admin.flight.route";
 import adminHotelRoutes from "./routes/admin/admin.hotel.route";
 import adminInternetServiceRoutes from "./routes/admin/admin.internet-service.route";
 import adminTopupServiceRoutes from "./routes/admin/admin.topup-service.route";
+import adminBankRoutes from "./routes/admin/admin.bank.route";
+import adminFeeConfigRoutes from "./routes/admin/admin.fee-config.route";
+import adminDashboardRoutes from "./routes/admin/admin.dashboard.route";
 import internetServiceRoutes from "./routes/internet-service.route";
 import topupServiceRoutes from "./routes/topup-service.route";
+import bankRoutes from "./routes/bank.route";
+import bankTransferRoutes from "./routes/bank-transfer.route";
+import notificationRoutes from "./routes/notification.route";
+import moneyRequestRoutes from "./routes/money-request.route";
+import undoRequestRoutes from "./routes/undo-request.route";
 
 dotenv.config();
 console.log(process.env.PORT);
@@ -62,18 +70,29 @@ app.use('/api/admin/flights', adminFlightRoutes);
 app.use('/api/admin/hotels', adminHotelRoutes);
 app.use('/api/admin/internet-services', adminInternetServiceRoutes);
 app.use('/api/admin/topup-services', adminTopupServiceRoutes);
+app.use('/api/admin/banks', adminBankRoutes);
+app.use('/api/admin/fee-configs', adminFeeConfigRoutes);
+app.use('/api/admin/dashboard', adminDashboardRoutes);
 app.use('/api/profile', userProfile);
 app.use('/api/devices', deviceRoutes);
 app.use('/api/flights', flightRoutes);
 app.use('/api/hotels', hotelRoutes);
 app.use('/api/internet-services', internetServiceRoutes);
 app.use('/api/topup-services', topupServiceRoutes);
+app.use('/api/banks', bankRoutes);
+app.use('/api/bank-transfers', bankTransferRoutes);
 app.use('/api/bookings', bookingRoutes);
+app.use('/api/notifications', notificationRoutes);
+
 
 if (isTestEnv) {
     app.use('/api/transactions', transactionRoutes);
+    app.use('/api/money-requests', moneyRequestRoutes);
+    app.use('/api/undo-requests', undoRequestRoutes);
 } else {
     app.use('/api/transactions', transactionLimiter, transactionRoutes);
+    app.use('/api/money-requests', transactionLimiter, moneyRequestRoutes);
+    app.use('/api/undo-requests', transactionLimiter, undoRequestRoutes);
 }
 
 app.use("/uploads", express.static(path.join(__dirname, '../uploads')));

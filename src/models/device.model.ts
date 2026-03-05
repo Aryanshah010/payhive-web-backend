@@ -15,6 +15,8 @@ const deviceSchema: Schema = new Schema(
             default: "PENDING",
             index: true,
         },
+        fcmToken: { type: String, required: false, default: null },
+        fcmUpdatedAt: { type: Date, required: false, default: null },
         lastSeenAt: { type: Date, required: false, default: null },
         allowedAt: { type: Date, required: false, default: null },
         blockedAt: { type: Date, required: false, default: null },
@@ -33,6 +35,8 @@ export interface IDevice extends Document {
     deviceName?: string | null;
     userAgent?: string | null;
     status: DeviceStatus;
+    fcmToken?: string | null;
+    fcmUpdatedAt?: Date | null;
     lastSeenAt?: Date | null;
     allowedAt?: Date | null;
     blockedAt?: Date | null;

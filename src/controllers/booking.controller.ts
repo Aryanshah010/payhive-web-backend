@@ -135,6 +135,9 @@ export class BookingController {
                     },
                     transactionId: data.transactionId,
                     idempotentReplay: data.idempotentReplay,
+                    amount: data.amount,
+                    fee: data.fee,
+                    totalDebited: data.totalDebited,
                 },
             });
         } catch (error) {

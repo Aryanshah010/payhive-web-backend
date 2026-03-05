@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 import { v4 as uuidv4 } from "uuid";
-import { BOOKING_PAYEE_USER_ID } from "../configs";
+import { BOOKING_PAYEE_USER_ID, PLATFORM_REVENUE_USER_ID } from "../configs";
 import { HttpError } from "../errors/http-error";
 import { ITransaction } from "../models/transaction.model";
 import { BookingRepository } from "../repositories/booking.repository";
@@ -9,12 +9,16 @@ import { HotelRepository } from "../repositories/hotel.repository";
 import { TransactionRepository } from "../repositories/transaction.repository";
 import { UserRepository } from "../repositories/user.repository";
 import { IUser } from "../models/user.model";
+import { FeeService } from "./fee.service";
+import { NotificationService } from "./notification.service";
 
 let bookingRepository = new BookingRepository();
 let flightRepository = new FlightRepository();
 let hotelRepository = new HotelRepository();
 let userRepository = new UserRepository();
 let transactionRepository = new TransactionRepository();
+let feeService = new FeeService();
+let notificationService = new NotificationService();
 
 interface CreateBookingInput {
     type: "flight" | "hotel";
@@ -34,6 +38,17 @@ interface BookingListInput {
 }
 
 const normalizeAmount = (amount: number) => Math.round(amount * 100) / 100;
+const formatAmount = (amount: number) => normalizeAmount(amount).toFixed(2);
+
+interface BookingPaymentResult {
+    booking: any;
+    transactionId: string;
+    txId?: string;
+    idempotentReplay: boolean;
+    amount: number;
+    fee: number;
+    totalDebited: number;
+}
 
 const isTransactionUnsupportedError = (error: unknown) => {
     if (!(error instanceof Error)) {
@@ -51,6 +66,26 @@ const namespacedBookingPayKey = (bookingId: string, idempotencyKey: string) =>
     `booking-pay:${bookingId}:${idempotencyKey}`;
 
 export class BookingService {
+    private async notifyBookingPaymentSuccess(userId: string, result: BookingPaymentResult) {
+        try {
+            await notificationService.createNotification({
+                userId,
+                title: "Payment Successful",
+                body: `Payment of Rs. ${formatAmount(result.totalDebited)} successful for booking`,
+                type: "PAYMENT_SUCCESS",
+                data: {
+                    txId: result.txId,
+                    transactionId: result.transactionId,
+                    amount: result.totalDebited,
+                    paymentType: "BOOKING_PAYMENT",
+                    direction: "DEBIT",
+                },
+            });
+        } catch (error) {
+            console.error("Failed to create booking payment notification:", error);
+        }
+    }
+
     async createBooking(userId: string, input: CreateBookingInput) {
         if (input.type === "flight") {
             return this.createFlightBooking(userId, input);
@@ -119,11 +154,19 @@ export class BookingService {
                     existingTx._id.toString()
                 );
                 const resolvedBooking = healedBooking ?? booking;
+                const existingMeta = (existingTx.meta || {}) as Record<string, unknown>;
+                const metaAmount = existingMeta.amount as number | undefined;
+                const metaFee = existingMeta.fee as number | undefined;
+                const metaTotal = existingMeta.totalDebited as number | undefined;
 
                 return {
                     booking: resolvedBooking,
                     transactionId: existingTx._id.toString(),
+                    txId: existingTx.txId,
                     idempotentReplay: true,
+                    amount: metaAmount ?? existingTx.amount,
+                    fee: metaFee ?? 0,
+                    totalDebited: metaTotal ?? existingTx.amount,
                 };
             }
         }
@@ -138,7 +181,10 @@ export class BookingService {
         }
 
         const amount = normalizeAmount(booking.price);
+        const fee = await feeService.getFixedFee("service_payment", booking.type);
+        const totalDebited = normalizeAmount(amount + fee);
         const payee = await this.resolvePayee(userId);
+        const revenueWallet = fee > 0 ? await this.resolveRevenueWallet(userId) : null;
 
         let releaseClaim = true;
         try {
@@ -146,11 +192,18 @@ export class BookingService {
                 bookingId,
                 userId,
                 payeeId: payee._id.toString(),
+                revenueWalletId: revenueWallet?._id.toString(),
                 amount,
+                fee,
+                totalDebited,
+                serviceType: booking.type,
                 idempotencyKey: namespacedKey,
             });
 
             releaseClaim = false;
+            if (!transactionalResult.idempotentReplay) {
+                await this.notifyBookingPaymentSuccess(userId, transactionalResult);
+            }
             return transactionalResult;
         } catch (error: unknown) {
             if (!isTransactionUnsupportedError(error)) {
@@ -161,10 +214,17 @@ export class BookingService {
                 bookingId,
                 userId,
                 payeeId: payee._id.toString(),
+                revenueWalletId: revenueWallet?._id.toString(),
                 amount,
+                fee,
+                totalDebited,
+                serviceType: booking.type,
                 idempotencyKey: namespacedKey,
             });
             releaseClaim = false;
+            if (!fallbackResult.idempotentReplay) {
+                await this.notifyBookingPaymentSuccess(userId, fallbackResult);
+            }
             return fallbackResult;
         } finally {
             if (releaseClaim) {
@@ -327,27 +387,65 @@ export class BookingService {
         return payee;
     }
 
+    private async resolveRevenueWallet(userId: string) {
+        let revenueWallet: IUser | null = null;
+        if (PLATFORM_REVENUE_USER_ID) {
+            const configuredRevenue = await userRepository.getUserById(PLATFORM_REVENUE_USER_ID);
+            if (configuredRevenue) {
+                revenueWallet = configuredRevenue;
+            }
+        }
+
+        if (!revenueWallet) {
+            revenueWallet = await userRepository.getFirstAdminUser();
+        }
+
+        if (!revenueWallet) {
+            throw new HttpError(500, "Platform revenue wallet not configured", {
+                code: "REVENUE_NOT_CONFIGURED",
+            });
+        }
+
+        if (revenueWallet._id.toString() === userId) {
+            throw new HttpError(
+                500,
+                "Platform revenue wallet cannot be the same as payer wallet. Configure PLATFORM_REVENUE_USER_ID to a different user.",
+                { code: "REVENUE_MISCONFIGURED" }
+            );
+        }
+
+        return revenueWallet;
+    }
+
     private async payWithMongoTransaction({
         bookingId,
         userId,
         payeeId,
+        revenueWalletId,
         amount,
+        fee,
+        totalDebited,
+        serviceType,
         idempotencyKey,
     }: {
         bookingId: string;
         userId: string;
         payeeId: string;
+        revenueWalletId?: string;
         amount: number;
+        fee: number;
+        totalDebited: number;
+        serviceType: "flight" | "hotel";
         idempotencyKey?: string;
-    }) {
+    }): Promise<BookingPaymentResult> {
         const session = await mongoose.startSession();
         let booking: any;
-        let tx: ITransaction | null = null;
         let transactionId: string | null = null;
+        let externalTxId: string | null = null;
 
         try {
             await session.withTransaction(async () => {
-                const debited = await userRepository.debitUser(userId, amount, session);
+                const debited = await userRepository.debitUser(userId, totalDebited, session);
                 if (!debited) {
                     throw new HttpError(402, "Top up your wallet", { code: "INSUFFICIENT_FUNDS" });
                 }
@@ -357,21 +455,35 @@ export class BookingService {
                     throw new HttpError(500, "Failed to credit payee wallet");
                 }
 
-                tx = await transactionRepository.createTransaction(
+                if (fee > 0 && revenueWalletId) {
+                    const revenueCredited = await userRepository.creditUser(revenueWalletId, fee, session);
+                    if (!revenueCredited) {
+                        throw new HttpError(500, "Failed to credit revenue wallet");
+                    }
+                }
+
+                const tx = await transactionRepository.createTransaction(
                     {
                         from: new mongoose.Types.ObjectId(userId),
                         to: new mongoose.Types.ObjectId(payeeId),
-                        amount,
+                        amount: totalDebited,
                         remark: "Booking payment",
                         status: "SUCCESS",
                         txId: uuidv4(),
                         bookingId: new mongoose.Types.ObjectId(bookingId),
                         paymentType: "BOOKING_PAYMENT",
+                        meta: {
+                            serviceType,
+                            amount,
+                            fee,
+                            totalDebited,
+                        },
                         ...(idempotencyKey ? { idempotencyKey } : {}),
                     },
                     session
                 );
                 transactionId = tx._id.toString();
+                externalTxId = tx.txId;
 
                 booking = await bookingRepository.markPaid(bookingId, transactionId, session);
                 if (!booking) {
@@ -382,14 +494,18 @@ export class BookingService {
             await session.endSession();
         }
 
-        if (!tx || !booking || !transactionId) {
+        if (!booking || !transactionId || !externalTxId) {
             throw new HttpError(500, "Payment failed");
         }
 
         return {
             booking,
             transactionId,
+            txId: externalTxId,
             idempotentReplay: false,
+            amount,
+            fee,
+            totalDebited,
         };
     }
 
@@ -397,21 +513,30 @@ export class BookingService {
         bookingId,
         userId,
         payeeId,
+        revenueWalletId,
         amount,
+        fee,
+        totalDebited,
+        serviceType,
         idempotencyKey,
     }: {
         bookingId: string;
         userId: string;
         payeeId: string;
+        revenueWalletId?: string;
         amount: number;
+        fee: number;
+        totalDebited: number;
+        serviceType: "flight" | "hotel";
         idempotencyKey?: string;
-    }) {
+    }): Promise<BookingPaymentResult> {
         let payerDebited = false;
         let payeeCredited = false;
+        let revenueCredited = false;
         let paymentTx: ITransaction | null = null;
 
         try {
-            const debited = await userRepository.debitUser(userId, amount);
+            const debited = await userRepository.debitUser(userId, totalDebited);
             if (!debited) {
                 throw new HttpError(402, "Top up your wallet", { code: "INSUFFICIENT_FUNDS" });
             }
@@ -423,15 +548,29 @@ export class BookingService {
             }
             payeeCredited = true;
 
+            if (fee > 0 && revenueWalletId) {
+                const revenueCredit = await userRepository.creditUser(revenueWalletId, fee);
+                if (!revenueCredit) {
+                    throw new HttpError(500, "Failed to credit revenue wallet");
+                }
+                revenueCredited = true;
+            }
+
             paymentTx = await transactionRepository.createTransaction({
                 from: new mongoose.Types.ObjectId(userId),
                 to: new mongoose.Types.ObjectId(payeeId),
-                amount,
+                amount: totalDebited,
                 remark: "Booking payment",
                 status: "SUCCESS",
                 txId: uuidv4(),
                 bookingId: new mongoose.Types.ObjectId(bookingId),
                 paymentType: "BOOKING_PAYMENT",
+                meta: {
+                    serviceType,
+                    amount,
+                    fee,
+                    totalDebited,
+                },
                 ...(idempotencyKey ? { idempotencyKey } : {}),
             });
 
@@ -447,7 +586,11 @@ export class BookingService {
             return {
                 booking,
                 transactionId: paymentTx._id.toString(),
+                txId: paymentTx.txId,
                 idempotentReplay: false,
+                amount,
+                fee,
+                totalDebited,
             };
         } catch (error: unknown) {
             if (paymentTx) {
@@ -459,7 +602,11 @@ export class BookingService {
                     return {
                         booking: healed,
                         transactionId: paymentTx._id.toString(),
+                        txId: paymentTx.txId,
                         idempotentReplay: false,
+                        amount,
+                        fee,
+                        totalDebited,
                     };
                 }
             }
@@ -468,9 +615,14 @@ export class BookingService {
                 bookingId,
                 userId,
                 payeeId,
+                revenueWalletId,
                 amount,
+                fee,
+                totalDebited,
+                serviceType,
                 payerDebited,
                 payeeCredited,
+                revenueCredited,
                 originalError: error,
             });
 
@@ -501,17 +653,27 @@ export class BookingService {
         bookingId,
         userId,
         payeeId,
+        revenueWalletId,
         amount,
+        fee,
+        totalDebited,
+        serviceType,
         payerDebited,
         payeeCredited,
+        revenueCredited,
         originalError,
     }: {
         bookingId: string;
         userId: string;
         payeeId: string;
+        revenueWalletId?: string;
         amount: number;
+        fee: number;
+        totalDebited: number;
+        serviceType: "flight" | "hotel";
         payerDebited: boolean;
         payeeCredited: boolean;
+        revenueCredited: boolean;
         originalError: unknown;
     }) {
         let compensationOk = true;
@@ -523,8 +685,15 @@ export class BookingService {
             }
         }
 
+        if (revenueCredited && revenueWalletId) {
+            const reversedRevenue = await userRepository.debitUser(revenueWalletId, fee);
+            if (!reversedRevenue) {
+                compensationOk = false;
+            }
+        }
+
         if (payerDebited) {
-            const refundedUser = await userRepository.creditUser(userId, amount);
+            const refundedUser = await userRepository.creditUser(userId, totalDebited);
             if (!refundedUser) {
                 compensationOk = false;
             }
@@ -534,12 +703,18 @@ export class BookingService {
             await transactionRepository.createTransaction({
                 from: new mongoose.Types.ObjectId(payeeId),
                 to: new mongoose.Types.ObjectId(userId),
-                amount,
+                amount: totalDebited,
                 remark: "Compensation refund for booking payment failure",
                 status: "SUCCESS",
                 txId: uuidv4(),
                 bookingId: new mongoose.Types.ObjectId(bookingId),
                 paymentType: "BOOKING_REFUND_COMP",
+                meta: {
+                    serviceType,
+                    amount,
+                    fee,
+                    totalDebited,
+                },
             }).catch(() => null);
         }
 

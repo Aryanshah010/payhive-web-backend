@@ -7,12 +7,17 @@ export const JWT_SECRET: string = process.env.JWT_SECRET || 'aryan@123_secret';
 export const CLIENT_URL: string = process.env.CLIENT_URL || 'http://localhost:3000';
 export const EMAIL_USER: string = process.env.EMAIL_USER || '';
 export const EMAIL_PASS: string = process.env.EMAIL_PASS || '';
+export const INTERNAL_NOTIFICATION_SECRET: string = process.env.INTERNAL_NOTIFICATION_SECRET || '';
+export const FCM_SERVICE_ACCOUNT_PATH: string = process.env.FCM_SERVICE_ACCOUNT_PATH || '';
 export const BOOKING_PAYEE_USER_ID: string = process.env.BOOKING_PAYEE_USER_ID || '';
+export const PLATFORM_REVENUE_USER_ID: string = process.env.PLATFORM_REVENUE_USER_ID || '';
+export const BANK_CLEARING_ACCOUNT_USER_ID: string = process.env.BANK_CLEARING_ACCOUNT_USER_ID || '';
+export const BANK_TRANSFER_FIXED_FEE = 10;
 
 // Transfer limits
 export const MAX_TRANSFER_AMOUNT: number = process.env.MAX_TRANSFER_AMOUNT
     ? parseInt(process.env.MAX_TRANSFER_AMOUNT)
-    : 100000;
+    : 1000000;
 
 export const DAILY_TRANSFER_LIMIT: number = process.env.DAILY_TRANSFER_LIMIT
     ? parseInt(process.env.DAILY_TRANSFER_LIMIT)

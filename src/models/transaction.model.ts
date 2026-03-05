@@ -6,7 +6,8 @@ export type TransactionPaymentType =
     | "BOOKING_PAYMENT"
     | "BOOKING_REFUND_COMP"
     | "UTILITY_PAYMENT"
-    | "UTILITY_REFUND_COMP";
+    | "UTILITY_REFUND_COMP"
+    | "BANK_TRANSFER";
 
 const transactionSchema: Schema = new Schema(
     {
@@ -20,7 +21,14 @@ const transactionSchema: Schema = new Schema(
         bookingId: { type: Schema.Types.ObjectId, ref: "Booking", required: false, default: null },
         paymentType: {
             type: String,
-            enum: ["TRANSFER", "BOOKING_PAYMENT", "BOOKING_REFUND_COMP", "UTILITY_PAYMENT", "UTILITY_REFUND_COMP"],
+            enum: [
+                "TRANSFER",
+                "BOOKING_PAYMENT",
+                "BOOKING_REFUND_COMP",
+                "UTILITY_PAYMENT",
+                "UTILITY_REFUND_COMP",
+                "BANK_TRANSFER",
+            ],
             default: "TRANSFER",
         },
         meta: { type: Schema.Types.Mixed, required: false, default: null },

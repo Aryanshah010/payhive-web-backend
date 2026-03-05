@@ -1,4 +1,6 @@
 process.env.NODE_ENV = "test";
+process.env.INTERNAL_NOTIFICATION_SECRET =
+    process.env.INTERNAL_NOTIFICATION_SECRET || "itest-internal-secret";
 
 import { connectDb } from "../database/mongodb";
 import mongoose from "mongoose";

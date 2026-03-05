@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { DeviceService } from "../services/device.service";
 import { HttpError } from "../errors/http-error";
 import z from "zod";
+import { NotificationFcmTokenDto } from "../dtos/notification.dto";
 
 const deviceService = new DeviceService();
 const DeviceStatusSchema = z.enum(["ALLOWED", "PENDING", "BLOCKED"]);
@@ -87,6 +88,45 @@ export class DeviceController {
 
             const device = await deviceService.blockDevice(userId.toString(), deviceId);
             return res.status(200).json({ success: true, data: device, message: "Device blocked" });
+        } catch (error: Error | any) {
+            return res.status(error.statusCode || 500).json({
+                success: false,
+                message: error.message || "Internal Server Error",
+            });
+        }
+    }
+
+    async updateFcmToken(req: Request, res: Response) {
+        try {
+            const userId = req.user?._id;
+            if (!userId) {
+                return res.status(400).json({ success: false, message: "User ID not provided" });
+            }
+
+            const deviceId = req.params.deviceId;
+            if (!deviceId) {
+                throw new HttpError(400, "Device ID is required");
+            }
+
+            const parsedBody = NotificationFcmTokenDto.safeParse(req.body);
+            if (!parsedBody.success) {
+                return res.status(400).json({
+                    success: false,
+                    message: z.prettifyError(parsedBody.error),
+                });
+            }
+
+            const data = await deviceService.updateFcmToken(
+                userId.toString(),
+                deviceId,
+                parsedBody.data.fcmToken
+            );
+
+            return res.status(200).json({
+                success: true,
+                data,
+                message: "FCM token updated",
+            });
         } catch (error: Error | any) {
             return res.status(error.statusCode || 500).json({
                 success: false,
